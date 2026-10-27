@@ -1,201 +1,69 @@
 # S04TV Fire Edition
 
-**Version 0.5.3 — SPA-Navigation, 3Q-Playersteuerung und Diagnose**
+**Version 0.6.0 – native Fire-TV-Steuerung des originalen 3Q-Webplayers**
 
-Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
-Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
+Inoffizielle Fire-TV-/Android-TV-App für https://tv.schalke04.de/. Kein offizielles Produkt des FC Schalke 04. Anmeldung, Inhalte und Zugriffsrechte werden vollständig von S04TV und 3Q bereitgestellt. Keine Umgehung von DRM, Abonnements oder Ein-Gerät-Regeln.
 
-## Bedienung auf Fire TV
+## Was die App macht
 
-- **Links / Rechts**: zwischen Videokacheln wechseln. **Hoch / Runter**: beim Navigieren zwischen Videos ausschließlich zu Videokacheln der vorherigen/nächsten Reihe wechseln, ohne unbeabsichtigt in die Menüleiste zu springen.
-- **OK**: fokussierte Videokachel / Schaltfläche öffnen; beim Suchfeld die Android-Tastatur öffnen.
-- **Cyanfarbener Rahmen**: zeigt die aktuell ausgewählte Videokachel; sie wird bei Bedarf automatisch in den Bildbereich gescrollt.
-- **Zurück**: aus der Videowiedergabe zur vorherigen Videoübersicht zurückkehren. In nativem Android-Player-Vollbild wird zuerst das Vollbild beendet. Bei anderen Seiten wird der Browserverlauf verwendet.
-- **Zurück zweimal innerhalb von 2 Sekunden auf der Startseite**: App beenden.
-- **Menü**: Einstellungen. **TV-Fokusnavigation ausschalten/einschalten** schaltet für Sonderfälle zur nativen WebView-Tastensteuerung um, ohne einen Mauszeiger einzublenden.
-- **Videodetailseite / 3Q-Videoplayer**: das originale Player-Element wird automatisch bildschirmfüllend dargestellt (Kiosk-Darstellung über CSS, kein Klick auf den Vor-/Zurückspulbereich und kein erzwungener Browser-Fullscreen-Aufruf). Die 3Q-Player-Tastensteuerung bleibt unverändert und muss auf Fire TV geprüft werden.
-- **Salesforce-Anmeldeseite**: originale Formularnavigation und TV-optimierte CSS-Darstellung bleiben erhalten.
-- **Updates prüfen / installieren**: gemeinsamer Ablauf für Versionsvergleich, Download, SHA-256-Prüfung und Android-Paketinstallation.
+- Der **WebView-Katalog** verwendet Steuerkreuz-Navigation zwischen Videokacheln, hervorgehobenen Fokusrahmen, OK zum Öffnen und Zurück zur letzten Katalogseite.
+- Auf S04TV-Videoseiten stellt die App den **tatsächlich beobachteten 3Q-Container** `.video__player.js3q-wrapper` bildschirmfüllend dar. Der TV-Modus ist ausdrücklich nicht mit der HTML-Fullscreen-API gleichzusetzen.
+- Für Wiedergabe, Pause, 10-Sekunden-Seeks und echtes Vollbild verwendet der separate `ThreeQPlayerController` nur die **öffentlich dokumentierten 3Q-Web-SDK-Methoden** auf `window.player`. Keine Stream-URL-Extraktion, keine HTML5-Video-Manipulation des 3Q-MSE-Players und keine Tastensimulation.
+- Hoch/Runter öffnet die **native, per Steuerkreuz fokussierbare Playerleiste**: 10 Sekunden zurück, Wiedergabe/Pause, 10 Sekunden vor, Vollbild, Diagnose, Schließen.
+- Die native Fullscreen-Schaltfläche ruft `player.fullscreen()` auf, sofern die Player-Instanz bereit ist. Die tatsächliche Vollbildaktivierung wird diagnostisch über `document.fullscreenElement` unterschieden. Fire-WebView und Nutzeraktivierung können diese Funktion einschränken.
+- Die WebView verwendet `WebChromeClient.onShowCustomView/onHideCustomView`; Zurück wird vor der WebView verarbeitet. Nach dem Video wird der Katalog wieder aufgerufen.
+- Die S04-Account-Anmeldeseite behält ihr TV-Design, dynamisches Autofill und die Originalweiterleitungen. Anmeldedaten werden optional lokal über Android Keystore verschlüsselt gespeichert.
+- Updates werden von signierten GitHub Releases geladen und vor der Android-Installation per SHA-256 geprüft.
 
-Es werden keine Bildschirmkoordinaten und kein Mauszeiger verwendet. Der Fokuscontroller arbeitet auf den Videolinks der Originalwebsite. Er ersetzt nicht den originalen 3Q-Player und umgeht keinerlei Zugriffsschutz.
+## Fernbedienung
 
-## Anmeldung
+| Kontext | Taste | Aktion |
+| --- | --- | --- |
+| Katalog | Links/Rechts/Hoch/Runter | Videokachel auswählen |
+| Katalog | OK | Ausgewählte Kachel öffnen |
+| Videoseite | OK oder Play/Pause | Wiedergabe umschalten |
+| Videoseite | Links/Rechts | -10/+10 Sekunden |
+| Videoseite | Hoch oder Runter | Native Playerleiste öffnen |
+| Playerleiste | Steuerkreuz + OK | Native Buttons bedienen |
+| Playerleiste | Zurück | Playerleiste schließen |
+| Video-Vollbild | Zurück | Zuerst Android-Vollbild schließen |
+| Videoseite | Zurück | Zur vorherigen Katalogseite |
+| Startseite | Zweimal Zurück | App beenden |
+| Überall | Menü | Einstellungen und Diagnose |
 
-Die App erhält Cookies und WebStorage für bestehende S04-Anmeldesitzungen.
-Unter **Menü → Zugangsdaten** können E-Mail und Passwort optional mit
-Android Keystore (AES-GCM) lokal verschlüsselt abgelegt werden.
-Die Daten werden ausschließlich auf HTTPS-Seiten von
-`account.schalke04.de` mit Login-Pfad (`/s/login/`, `/login/` oder
-Startseite) in **sichtbare, leere** Loginfelder eingetragen.
-Die Salesforce-Anmeldeseite kann ihre Formularfelder dynamisch nachladen:
-Die App überwacht das Login-Formular deshalb bis zu 30 Sekunden lang und
-erkennt auch Eingabefelder mit Beschriftungen **E-Mail-Adresse** und
-**Passwort** sowie offene Shadow-DOM-Felder. Bereits von Hand ausgefüllte
-Felder werden nicht überschrieben. Die Anmeldung wird **niemals**
-automatisch abgeschickt. Sitzungen können weiterhin ablaufen.
+## Diagnose
 
-Die langen Parameter `startURL` und `source` der Salesforce-
-Anmeldeweiterleitung werden von der App nicht gespeichert oder
-protokolliert. Die Website führt die Weiterleitung selbst aus.
+Auf einer Videoseite: **Menü → Player-Steuerung / Diagnose → Playerdiagnose anzeigen** oder über **Hoch → Info**.
 
-**Erste Anmeldung:** Unter **Menü → Zugangsdaten** einmalig E-Mail und
-Passwort speichern. Danach werden beide Felder beim nächsten Besuch der
-S04-Account-Anmeldeseite automatisch ausgefüllt. Ohne vorher gespeicherte
-Zugangsdaten gibt es kein Autofill. Feldnamen oder Seitenskripte können sich
-ändern; die Bedienung muss auf einem echten Fire TV geprüft werden.
+Die Diagnose enthält ausschließlich sichere Daten: Player-Readiness, Wrapper-/Videomaße, Bildschirmgröße, Fullscreen-/TV-Layout-Status, Wiedergabezeit und die Namen der letzten Playerereignisse. **Keine Zugangsdaten, Tokens, Playout-IDs, URLs oder vollständigen Event-Payloads** werden erfasst.
 
-## Darstellungsgröße / Auflösung
+Die Testbefunde der ursprünglichen Website: **3Q 5.4.7**, globales `window.player = new js3q(...)`, direkt im Hauptdokument, HTML5-Video unter `video.sdn-source-element`. Methoden laut offizieller Dokumentation: https://player.docs.3q.video/player-web-sdk/methods.
 
-**Menü → Darstellungsgröße** bietet automatisch, 720p, 1080p und 4K.
-Diese Werte entsprechen virtuellen **CSS-Viewport-Breiten** (1280,
-1920, 3840 Pixel), nicht der tatsächlichen HDMI-Ausgabe, der
-Videoauflösung oder der Bitrate. Diese experimentelle Einstellung
-ändert das Viewport-Metatag; Webseiten können das ignorieren.
-Die tatsächliche Ausgabeauflösung wird in Fire TV selbst eingestellt.
+Ein echter Fire-TV-Test ist weiterhin nötig, insbesondere für HTML-Fullscreen (User Activation), Touch-/Keyevent-Fokus, VoD, Live, Untertitel und die Rückkehr in den Katalog. **Ein erfolgreicher Gradle-Build bestätigt nur die Kompilierung, nicht die Wiedergabe auf dem Gerät.**
 
-## APK bauen
+## Native Media3-Wiedergabe (geplant, nicht umgesetzt)
 
-In GitHub: **Actions → Build Fire TV APK → Run workflow**.
-Bei erfolgreichem Build das Artifact \`s04tv-fire-edition-debug-apk\`
-herunterladen und die enthaltene \`app-debug.apk\` installieren.
+Die untersuchte Webseite nutzt HLS mit .m3u8 und .m4s sowie AVC/AAC. Das Format ist für ExoPlayer grundsätzlich geeignet. **Nicht geklärt** sind eine vom Inhalteanbieter unterstützte native Playback-Schnittstelle, der zulässige Berechtigungskontext, Token-Erneuerung, DRM, Heartbeats und Ein-Gerät-Regeln. ExoPlayer wird daher erst integriert, wenn die autorisierte native Stream-Übergabe feststeht. Betreiber-API-Schlüssel dürfen nicht in die App eingebettet werden.
 
-Alternativ: JDK 17, Android SDK 35 und Gradle 8.10.2:
+## Projektstruktur
 
-\`\`\`sh
-gradle assembleDebug
-adb connect FIRETV-IP:5555
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-\`\`\`
+- `MainActivity.java` – WebView, Navigation, Fullscreen-CustomView, Menüs und Lebenszyklus.
+- `TvFocusNavigation.java` – räumlicher Videokachel-Fokus im Katalog.
+- `ThreeQPlayerController.java` – gesicherte Playerbefehle und bereinigte Diagnosen über die dokumentierte Web-SDK-API.
+- `VideoTvMode.java` – separat gekennzeichnete bildschirmfüllende CSS-TV-Darstellung des Originalplayers.
+- `TvPlayerControls.java` – native Fire-TV-Bedienleiste.
+- `LoginAutoFill.java` / `LoginTvOverlay.java` – Salesforce-Anmeldung.
+- `UpdateManager.java` – signiertes GitHub-APK-Update.
 
-Das Projekt verwendet keinen Gradle-Wrapper. GitHub Actions
-installiert Gradle 8.10.2 automatisch.
+## Build und Signatur
 
-## Wichtige Einschränkungen
+**GitHub Actions → Build Fire TV APK** baut Debug und, sofern die folgenden vier GitHub Secrets eingerichtet sind, ein signiertes Release bei Push auf `main`:
 
-Der S04TV-Webplayer und der Mauszeiger wurden nicht auf einem realen Fire TV getestet.
-Der Mausmodus sendet Touch-Events an das WebView bzw. die Vollbild-Player-Ansicht;
-falls einzelne Cookie-Dialoge oder fremde Player-Overlays Touch-Eingaben
-ablehnen, ist ein zusätzlicher Fix erforderlich.
-Der Cursor wird nicht in Android-Systemdialogen angezeigt; diese werden
-weiter mit dem normalen Steuerkreuz bedient.
-Der S04TV-Webplayer wurde nicht auf einem realen Fire TV getestet.
-Videowiedergabe kann wegen WebView-, HLS-, EME- oder DRM-Unterstützung
-fehlschlagen. Die App umgeht keinen Kopierschutz und bringt keine
-zusätzlichen Decoder oder Drittanbieter-SDKs mit. Keine Garantie für
-Login-Autofill bei dynamischen Formularen. Apps können nicht zuverlässig
-die physische Fire-TV-HDMI-Auflösung umstellen.
+- `S04TV_KEYSTORE_BASE64`
+- `S04TV_KEYSTORE_PASSWORD`
+- `S04TV_KEY_ALIAS`
+- `S04TV_KEY_PASSWORD`
 
-Die App hat keinen eigenen Server und verwendet nur HTTPS.
-Android-Backups sind deaktiviert.
+JDK 17, Android SDK 35, Gradle 8.10.2; lokaler Build: `gradle assembleDebug`. Das Repository enthält keinen Gradle Wrapper. Die Release-APK heißt `s04tv-fire-edition.apk`.
 
-## Lizenz
-
-Siehe [LICENSE](LICENSE).
-
-## GitHub Releases als Updatequelle
-
-Die App prüft ausschließlich den neuesten öffentlichen GitHub Release von
-\`CaptainCookLP/s04tv-fire-edition\` über die GitHub-API. Erwarteter Asset-Name:
-\`s04tv-fire-edition.apk\`; Release-Tag \`vMAJOR.MINOR.PATCH\`.
-Nach der Bestätigung lädt sie die APK über HTTPS herunter, prüft den SHA-256
-Digest des offiziellen GitHub-Release-Assets und öffnet den Android-Installer.
-Es erfolgt keine stille Installation und kein DRM-Eingriff. Für Fire OS muss
-gegebenenfalls unter den Geräteeinstellungen das Installieren von Apps aus
-dieser Quelle erlaubt werden.
-
-### Dauerhafte Release-Signatur einmalig einrichten
-
-**Debug-APKs aus GitHub Actions können nicht zuverlässig über neue Versionen
-aktualisiert werden**, weil GitHub Runner temporäre Debug-Signaturen erzeugen.
-Ein dauerhaft verwendeter privater Release-Keystore ist für die
-In-App-Updates erforderlich. Bei Umstellung von einer Debug-APK auf die
-erste Release-APK muss die Debug-Installation ggf. einmalig deinstalliert
-werden. Dabei gehen lokal gespeicherte Cookies und Anmeldedaten verloren.
-
-Erzeuge einen **privaten** Android-Keystore und bewahre ihn offline auf:
-
-\`\`\`bash
-keytool -genkeypair -v -keystore s04tv-release.jks -alias s04tv -keyalg RSA -keysize 3072 -validity 10000
-\`\`\`
-
-Unter **Settings → Secrets and variables → Actions → Repository secrets**
-sind folgende vier Werte einzutragen:
-
-| Secret | Wert |
-| --- | --- |
-| \`S04TV_KEYSTORE_BASE64\` | Vollständige JKS-Datei als Base64 ohne Zeilenumbrüche |
-| \`S04TV_KEYSTORE_PASSWORD\` | Passwort der JKS-Datei |
-| \`S04TV_KEY_ALIAS\` | Alias des Schlüssels (\`s04tv\`) |
-| \`S04TV_KEY_PASSWORD\` | Passwort des Schlüssels |
-
-Für Base64 etwa unter PowerShell:
-
-\`\`\`powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path ".\\s04tv-release.jks")))
-\`\`\`
-
-**Keystore und Passwörter niemals im Repository speichern.**
-Falls der Keystore verloren geht, können installierte Versionen nicht mehr
-mit derselben Signatur aktualisiert werden.
-
-Der Workflow **Build Fire TV APK** erzeugt auf jedem Push nach \`main\`
-ein Debug-APK als Actions-Artifact. Wenn die vier Secrets gesetzt sind,
-baut er zusätzlich ein signiertes APK und veröffentlicht es automatisch
-als **GitHub Release** mit Tag \`v<versionName>\` und Asset
-\`s04tv-fire-edition.apk\`. Ein existierendes Release wird nicht
-überschrieben; für das nächste Release müssen \`versionCode\` und
-\`versionName\` in \`app/build.gradle\` erhöht werden.
-
-Nach Einrichtung der Secrets kann der Workflow auf \`main\` manuell
-über **Actions → Build Fire TV APK → Run workflow** erneut gestartet werden.
-Der Workflow benötigt für Releases \`contents: write\` für den
-\`GITHUB_TOKEN\`. Falls eine Repository-Richtlinie Schreibzugriffe
-für GitHub Actions deaktiviert, muss diese Einstellung angepasst werden.
-
-### Release-Asset-Name
-
-Ab v0.3.1 wird das signierte Release-APK tatsächlich als
-`s04tv-fire-edition.apk` hochgeladen (nicht nur mit diesem Anzeigelabel).
-Dies entspricht dem Dateinamen, den der In-App-Updater erwartet.
-Die ältere v0.3.0-Veröffentlichung hatte dagegen den tatsächlichen
-Dateinamen `app-release.apk`.
-
-
-## TV-optimierte Bedienung (v0.4.0)
-
-- Nur auf der echten Salesforce-Anmeldeseite `https://account.schalke04.de/s/login/` (und den alternativen Loginpfaden) wird **Präsentations-HTML und CSS** ergänzt: S04TV+-Kopfbereich, große Formularfelder, kontrastreiche Fokusränder und fernbedienungsfreundliche Schaltflächen. Originalformulare, Login-API, URLs, Cookies und Weiterleitungen werden nicht ersetzt.
-- Auf `tv.schalke04.de` prüft die App nach dem Seitenladen, ob ein **Login-Link** und kein **Mein Abo/Logout** vorhanden ist. Dann erscheint **einmal pro App-Start** ein nativer Hinweis mit `Jetzt anmelden` und `Später`. Die Anmelde-Schaltfläche nutzt den Original-Link der Website.
-- Im Mausmodus: **Steuerkreuz** = Cursor, **OK** = Klick; auf kompatiblen Fernbedienungen **Seite hoch/runter bzw. Kanal hoch/runter** = scrollen. Die Website außerhalb von `account.schalke04.de` erhält keine neuen CSS-Stile.
-- App-Icon und Android-TV-Leanback-Banner basieren auf den vom Nutzer bereitgestellten **S04TVplus_TV_Assets** und übernehmen deren originale Logo-Vektorpfade.
-- Der Updatepunkt im Menü vereint **Prüfen, Herunterladen und Installieren**. Die APK muss weiterhin vom Android-Paketinstaller bestätigt werden.
-
-## Version 0.5.0
-
-Der bisherige virtuelle Mauszeiger und dessen Geschwindigkeitsoptionen wurden entfernt. Auf `tv.schalke04.de` (außer den Video-Detailseiten) wird eine räumliche Fokusauswahl über den DOM-Elementen der bestehenden Website eingerichtet. Karussells werden soweit möglich über die vorhandenen Original-Schaltflächen weitergeschaltet. Die eingebetteten 3Q-Player erhalten weiterhin unveränderte Steuerkreuz-Ereignisse. Verifiziert ist der Code-Build; die Bedienung des Players muss auf einem Fire TV getestet werden.
-
-### v0.5.1: Verbesserte Fokusführung
-
-Der Fokuscontroller erkennt beim Navigieren in die nächste Videoreihe auch zunächst außerhalb des sichtbaren Fensters liegende Kacheln und berechnet den Fokusmittelpunkt nach dem Scrollen neu.
-
-
-## v0.5.2: TV-Korrekturen
-
-- **Steuerkreuz Hoch/Runter** bleibt beim Navigieren auf Videokacheln innerhalb der Videolinks und springt nicht mehr in die globale Menüleiste. Der Fokus bleibt stehen, wenn oberhalb kein weiteres Video vorhanden ist.
-- **Video automatisch bildschirmfüllend**: Die Original-Einbettung des 3Q-Players wird auf den Video-Detailseiten mithilfe von CSS auf die TV-Bildschirmgröße gebracht. Die originale Wiedergabe, Berechtigung und Stream-Logik bleiben unangetastet. Da die tatsächliche Player-Einbettung von der Website abhängt, ist die Darstellung auf einem Fire TV zu prüfen.
-- **Zurück-Taste** wird im Activity-Dispatch vor der WebView abgefangen. Aus Videoseiten geht es zur zuletzt besuchten S04TV-Übersichtsseite zurück. Unterseiten verwenden den WebView-Verlauf, auf der Startseite beendet doppeltes Zurück die App.
-
-
-## v0.5.3: Player-Fix und Diagnose (auf Fire TV zu überprüfen)
-
-- Der Player-Modus wird **auf jeder S04TV-Seite** installiert und erkennt Routenwechsel über `history.pushState` und das Beobachten der aktuellen URL. Das beseitigt die bisherige Lücke, bei der die Videoseite ohne `onPageFinished` angezeigt werden konnte.
-- Der Player-Finder sucht neben `iframe` auch sichtbare HTML5-`video`-Elemente und typische 3Q-Container. Die originale Einbettung bleibt erhalten, das gefundene Element wird für die Dauer der Videoseite bildschirmfüllend präsentiert.
-- **OK / Play-Pause** pausiert bzw. startet HTML5-Videos direkt; falls das Video in einem nicht zugänglichen Playerframe läuft, wird die dokumentierte 3Q-Taste **K** gesendet. **Links / Rechts** springen 10 Sekunden zurück/vor, soweit der Player dies erlaubt.
-- **Hoch** öffnet die native Playersteuerung, die auf Fire-TV-Fernbedienungen bedienbar ist.
-- **Menü → Player-Steuerung / Diagnose → Playerdiagnose anzeigen** zeigt nur den Status der Erkennung, die Anzahl von Video-/Iframe-Elementen und die erkannten Bildschirm-/Playergrößen an. Es werden keine Authentifizierungsdaten oder Stream-URLs angezeigt.
-- Wenn der Player weiterhin nicht bildschirmfüllend erscheint, ist die Diagnose der nächste notwendige Schritt; wir sollten nicht weiter mit unbestätigten CSS-Hypothesen neue Versionen erzeugen.
-
-Die dokumentierte 3Q-Web-SDK-Funktion **F** kann einen echten Vollbildwechsel auslösen, sofern der Playercontainer den Fokus hat. Die native Schaltfläche „Vollbild versuchen“ nutzt diese Fallback-Taste, wenn das eigene Layout den Bildschirm nicht füllt.
-
-### Rückmeldung zur Playerdiagnose
-
-Wenn weiterhin kein Vollbild erscheint: Auf einer S04TV-Videoseite **Menü → Player-Steuerung / Diagnose → Playerdiagnose anzeigen** öffnen. Für einen Fehlerbericht die Felder `mode`, `videos`, `iframes`, `screen`, `player` und `directMedia` abschreiben. Die Diagnose enthält keine Anmeldedaten und keine Stream-URLs. Zusätzlich Fire-TV-Modell und Fire-OS-Version notieren.
+Einstellungen: **Darstellungsgröße** passt nur die virtuelle CSS-Viewportbreite an, nicht HDMI oder Streamauflösung. **Anmeldesitzung löschen** entfernt Cookies/WebStorage, nicht die verschlüsselten Zugangsdaten.

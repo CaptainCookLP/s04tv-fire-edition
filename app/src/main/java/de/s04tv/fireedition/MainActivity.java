@@ -9,10 +9,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Base64;
-import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
@@ -56,6 +54,7 @@ public final class MainActivity extends Activity {
     private Runnable pendingLoginCheck;
     private boolean loginPromptShown;
     private String visitedUrl = HOME;
+    private TvPlayerControls playerControls;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -73,6 +72,7 @@ public final class MainActivity extends Activity {
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
         root.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        playerControls = new TvPlayerControls(this, root, this::handlePlayerAction);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -95,13 +95,18 @@ public final class MainActivity extends Activity {
                 super.doUpdateVisitedHistory(view, url, isReload);
                 visitedUrl = url;
                 if (isTvPage(url)) {
-                    // Trigger on client-side routing as well as regular page loads.
+                    // The catalog may use SPA routing: attach both controllers on URL changes.
+                    ThreeQPlayerController.install(view);
                     VideoTvMode.present(view);
-                    if (isTvCatalog(url)) TvFocusNavigation.install(view);
+                    if (isTvCatalog(url)) {
+                        playerControls.hide();
+                        TvFocusNavigation.install(view);
+                    }
                 }
             }
             @Override public void onPageFinished(WebView view, String url) {
                 visitedUrl = url;
+                if (!isTvVideo(url)) playerControls.hide();
                 applyViewport();
                 if (isLoginPage(url)) {
                     // Presentation is scoped only to account.schalke04.de.
@@ -114,6 +119,7 @@ public final class MainActivity extends Activity {
                         // Install on both catalog and detail pages; onPageFinished is
                         // not fired on all SPA transitions.
                         VideoTvMode.present(view);
+                        ThreeQPlayerController.install(view);
                         if (isTvCatalog(url)) TvFocusNavigation.install(view);
                     }
                 }
@@ -130,6 +136,9 @@ public final class MainActivity extends Activity {
                 fullscreenCallback = callback;
                 webView.setVisibility(View.GONE);
                 root.addView(view, new FrameLayout.LayoutParams(-1, -1));
+                view.setFocusable(true);
+                view.requestFocus();
+                if (playerControls.isShowing()) playerControls.hide();
             }
             @Override public void onHideCustomView() { hideVideo(); }
         });
@@ -280,37 +289,52 @@ public final class MainActivity extends Activity {
             Toast.makeText(this, "Playersteuerung nur auf Videoseiten verfügbar", Toast.LENGTH_SHORT).show();
             return;
         }
-        new AlertDialog.Builder(this)
-                .setTitle("S04TV+ Player")
-                .setItems(new String[]{
-                        "Wiedergabe / Pause",
-                        "10 Sekunden zurück",
-                        "10 Sekunden vor",
-                        "Vollbild versuchen",
-                        "Playerdiagnose anzeigen",
-                        "Zurück zur Videoübersicht"
-                }, (dialog, which) -> {
-                    switch (which) {
-                        case 0: VideoTvMode.toggle(webView); break;
-                        case 1: VideoTvMode.navigate(webView, "back10"); break;
-                        case 2: VideoTvMode.navigate(webView, "next10"); break;
-                        case 3: VideoTvMode.fullscreen(webView); break;
-                        case 4: showPlayerDiagnostics(); break;
-                        case 5: handleBack(); break;
-                        default: break;
-                    }
-                })
-                .setNegativeButton("Schließen", null).show();
+        playerControls.show();
+    }
+
+    private void handlePlayerAction(String action) {
+        if ("close".equals(action)) {
+            playerControls.hide();
+            webView.requestFocus();
+            return;
+        }
+        if ("diagnose".equals(action)) {
+            playerControls.hide();
+            showPlayerDiagnostics();
+            return;
+        }
+        if ("fullscreen".equals(action)) {
+            playerControls.hide();
+        }
+        playerCommand(action);
+    }
+
+    private void playerCommand(String action) {
+        ThreeQPlayerController.command(webView, action, result -> {
+            if (isFinishing() || isDestroyed() || !isTvVideo(visitedUrl)) return;
+            if (!result.optBoolean("ok")) {
+                String reason = result.optString("reason", "unbekannt");
+                Toast.makeText(this, "3Q-Player: " + reason, Toast.LENGTH_SHORT).show();
+            }
+            if ("fullscreen".equals(action)) {
+                // CSS TV mode is deliberately separate from HTML fullscreen.
+                // The controller's request status does not imply fullscreen succeeded.
+                VideoTvMode.present(webView);
+            }
+        });
     }
 
     private void showPlayerDiagnostics() {
-        VideoTvMode.diagnose(webView, info -> {
-            if (!isFinishing() && !isDestroyed())
-                new AlertDialog.Builder(this)
-                        .setTitle("3Q-Playerdiagnose")
-                        .setMessage(info)
-                        .setPositiveButton("OK", null)
-                        .show();
+        ThreeQPlayerController.diagnostics(webView, details -> {
+            if (isFinishing() || isDestroyed()) return;
+            String text = details.toString() +
+                    "\\nAndroid API: " + android.os.Build.VERSION.SDK_INT +
+                    "\\nApp: " + getPackageName();
+            new AlertDialog.Builder(this)
+                    .setTitle("3Q Player – Diagnose")
+                    .setMessage(text)
+                    .setPositiveButton("Schließen", null)
+                    .show();
         });
     }
 
@@ -333,14 +357,18 @@ public final class MainActivity extends Activity {
                 showSettings();
             return true;
         }
-        if (isTvVideo(visitedUrl) && fullscreenView == null) {
+        if (playerControls != null && playerControls.isShowing()) {
+            // Delegate D-pad movement and OK to Android's real focused buttons.
+            return super.dispatchKeyEvent(event);
+        }
+        if (isTvVideo(visitedUrl)) {
             switch (key) {
                 case KeyEvent.KEYCODE_DPAD_CENTER:
                 case KeyEvent.KEYCODE_ENTER:
                 case KeyEvent.KEYCODE_NUMPAD_ENTER:
                 case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
                     if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
-                        VideoTvMode.toggle(webView);
+                        playerCommand("toggle");
                     return true;
                 case KeyEvent.KEYCODE_DPAD_UP:
                     if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
@@ -348,11 +376,15 @@ public final class MainActivity extends Activity {
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
                     if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
-                        VideoTvMode.navigate(webView, "back10");
+                        playerCommand("back10");
                     return true;
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
                     if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
-                        VideoTvMode.navigate(webView, "next10");
+                        playerCommand("next10");
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                        showPlayerControls();
                     return true;
                 default: break;
             }
@@ -497,15 +529,26 @@ public final class MainActivity extends Activity {
         webView.setVisibility(View.VISIBLE);
         if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
         fullscreenCallback = null;
+        if (isTvVideo(visitedUrl)) VideoTvMode.present(webView);
+        webView.requestFocus();
     }
 
     private void handleBack() {
+        if (playerControls != null && playerControls.isShowing()) {
+            playerControls.hide();
+            if (webView != null) webView.requestFocus();
+            return;
+        }
         if (fullscreenView != null) {
             hideVideo();
             return;
         }
         if (webView != null) {
             if (isTvVideo(visitedUrl)) {
+                // Release fullscreen and playback when leaving a video.
+                ThreeQPlayerController.command(webView, "pause", null);
+                ThreeQPlayerController.command(webView, "exitfullscreen", null);
+                VideoTvMode.exit(webView);
                 // The webview history can contain redirects/player frames;
                 // return directly to the nearest S04TV catalog, if available.
                 android.webkit.WebBackForwardList history = webView.copyBackForwardList();
@@ -565,6 +608,7 @@ public final class MainActivity extends Activity {
         cancelLoginCheck();
         LoginAutoFill.stop(webView);
         if (updateManager != null) updateManager.destroy();
+        if (playerControls != null) playerControls.hide();
         hideVideo();
         if (webView != null) {
             root.removeView(webView);
