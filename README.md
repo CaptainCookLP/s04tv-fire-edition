@@ -1,5 +1,7 @@
 # S04TV Fire Edition
 
+**Version 0.2.0 — TV-Mauszeiger (Testversion)**
+
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
 
@@ -8,7 +10,16 @@ Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
 - **Menü**: Einstellungen
 - **Zurück zweimal binnen 2 Sekunden**: App beenden
 - **Zurück im Video-Vollbild**: Vollbild verlassen
-- Website im Vollbild, Navigation über die Fire-TV-Fernbedienung (abhängig von der Website)
+- **Mauszeiger standardmäßig aktiviert**: Steuerkreuz bewegt den sichtbaren
+  Mauszeiger (auch bei Cookie-Bannern und im Videovollbild).
+- **OK**: Mausklick an der Cursorposition (synthetischer Android-Touch,
+  auch für im WebView eingebettete Frames).
+- **Menü → Mauszeiger ausschalten/einschalten**: zwischen Mausmodus und
+  normaler Webseiten-D-Pad-Navigation wechseln.
+- **Menü → Mausgeschwindigkeit**: Langsam / Normal / Schnell.
+- **Menü → Mauszeiger zentrieren**: Cursor in Bildschirmmitte versetzen.
+- Eigenes blaues **S04TV-Icon** und TV-Banner mit Wortmarke (kein Vereinswappen).
+- Website im Vollbild, Navigation über die Fire-TV-Fernbedienung.
 
 ## Anmeldung
 
@@ -50,6 +61,12 @@ installiert Gradle 8.10.2 automatisch.
 
 ## Wichtige Einschränkungen
 
+Der S04TV-Webplayer und der Mauszeiger wurden nicht auf einem realen Fire TV getestet.
+Der Mausmodus sendet Touch-Events an das WebView bzw. die Vollbild-Player-Ansicht;
+falls einzelne Cookie-Dialoge oder fremde Player-Overlays Touch-Eingaben
+ablehnen, ist ein zusätzlicher Fix erforderlich.
+Der Cursor wird nicht in Android-Systemdialogen angezeigt; diese werden
+weiter mit dem normalen Steuerkreuz bedient.
 Der S04TV-Webplayer wurde nicht auf einem realen Fire TV getestet.
 Videowiedergabe kann wegen WebView-, HLS-, EME- oder DRM-Unterstützung
 fehlschlagen. Die App umgeht keinen Kopierschutz und bringt keine
