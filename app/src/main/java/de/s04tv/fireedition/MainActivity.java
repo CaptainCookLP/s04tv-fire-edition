@@ -264,6 +264,7 @@ public final class MainActivity extends Activity {
         startupSplash = null;
         startupHandler.removeCallbacks(startupTimeout);
         if (webView != null && fullscreenView == null) webView.requestFocus();
+        if (isTvPage(visitedUrl) && !loginPromptShown) scheduleLoginCheck();
     }
 
     private void startWebsite(String message) {
@@ -318,7 +319,8 @@ public final class MainActivity extends Activity {
     }
 
     private void scheduleLoginCheck() {
-        if (loginPromptShown) return;
+        // Account prompts must not interrupt caching or mandatory updates.
+        if (loginPromptShown || startupSplash != null) return;
         cancelLoginCheck();
         pendingLoginCheck = () -> {
             pendingLoginCheck = null;
@@ -480,6 +482,9 @@ public final class MainActivity extends Activity {
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
         if (startupSplash != null) {
+            // A mandatory Android dialog must receive D-pad and OK normally.
+            if (updateManager != null && updateManager.isRequiredDialogShowing())
+                return super.dispatchKeyEvent(event);
             // Never allow D-pad/OK to reach preloaded content during the update gate.
             if ((key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_ESCAPE ||
                     key == KeyEvent.KEYCODE_BUTTON_B) &&

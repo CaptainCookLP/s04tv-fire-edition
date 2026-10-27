@@ -99,6 +99,10 @@ final class UpdateManager {
         return requiredTag != null;
     }
 
+    boolean isRequiredDialogShowing() {
+        return requiredDialog != null && requiredDialog.isShowing();
+    }
+
     void showRequiredUpdateDialog() {
         if (!hasRequiredUpdate() || activity.isFinishing() || activity.isDestroyed()) return;
         if (mandatoryDownloadStarted || installerOpen ||
@@ -238,13 +242,10 @@ final class UpdateManager {
                             .setPositiveButton(cached ? "Installieren" : "Herunterladen & installieren", (dialog, which) -> {
                                 if (cached) verifyFileAndInstall();
                                 else downloadUpdate(url, sha256, tag);
-                                if (startupListener != null) startupListener.onFinished();
                             })
                             .setNegativeButton("Später", (dialog, which) -> {
-                                if (startupListener != null) startupListener.onFinished();
                             })
                             .setOnCancelListener(dialog -> {
-                                if (startupListener != null) startupListener.onFinished();
                             })
                             .show();
                 });
