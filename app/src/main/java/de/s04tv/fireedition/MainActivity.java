@@ -2,12 +2,8 @@ package de.s04tv.fireedition;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.Path;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -15,8 +11,6 @@ import android.os.SystemClock;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.KeyEvent;
-import android.view.InputDevice;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
@@ -55,8 +49,6 @@ public final class MainActivity extends Activity {
     private UpdateManager updateManager;
     private WebView webView;
     private FrameLayout root;
-    private CursorOverlay cursor;
-    private boolean mouseEnabled;
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
     private long lastBackPress;
@@ -80,10 +72,6 @@ public final class MainActivity extends Activity {
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
         root.addView(webView, new FrameLayout.LayoutParams(-1, -1));
-        mouseEnabled = preferences.getBoolean("mouse_enabled", true);
-        cursor = new CursorOverlay(this);
-        cursor.setVisibility(mouseEnabled ? View.VISIBLE : View.GONE);
-        root.addView(cursor, new FrameLayout.LayoutParams(-1, -1));
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -110,7 +98,10 @@ public final class MainActivity extends Activity {
                     fillLogin();
                 } else {
                     LoginAutoFill.stop(view);
-                    if (isTvPage(url)) scheduleLoginCheck();
+                    if (isTvPage(url)) {
+                        scheduleLoginCheck();
+                        if (isTvCatalog(url)) TvFocusNavigation.install(view);
+                    }
                 }
                 CookieManager.getInstance().flush();
             }
@@ -125,7 +116,6 @@ public final class MainActivity extends Activity {
                 fullscreenCallback = callback;
                 webView.setVisibility(View.GONE);
                 root.addView(view, new FrameLayout.LayoutParams(-1, -1));
-                cursor.bringToFront();
             }
             @Override public void onHideCustomView() { hideVideo(); }
         });
@@ -157,6 +147,14 @@ public final class MainActivity extends Activity {
             android.net.Uri uri = android.net.Uri.parse(url);
             return "https".equalsIgnoreCase(uri.getScheme()) &&
                     "tv.schalke04.de".equalsIgnoreCase(uri.getHost());
+        } catch (Exception ignored) { return false; }
+    }
+
+    private boolean isTvCatalog(String url) {
+        if (!isTvPage(url)) return false;
+        try {
+            String path = android.net.Uri.parse(url).getPath();
+            return path == null || !path.startsWith("/videos/");
         } catch (Exception ignored) { return false; }
     }
 
@@ -223,13 +221,12 @@ public final class MainActivity extends Activity {
     }
 
     private void showSettings() {
+        boolean focusOn = preferences.getBoolean("tv_focus", true);
         new AlertDialog.Builder(this)
                 .setTitle("S04TV Einstellungen")
                 .setItems(new String[]{
                         "Darstellungsgröße",
-                        mouseEnabled ? "Mauszeiger ausschalten" : "Mauszeiger einschalten",
-                        "Mausgeschwindigkeit",
-                        "Mauszeiger zentrieren",
+                        focusOn ? "TV-Fokusnavigation ausschalten" : "TV-Fokusnavigation einschalten",
                         "Zugangsdaten",
                         "Website neu laden",
                         "Anmeldesitzung löschen",
@@ -237,13 +234,20 @@ public final class MainActivity extends Activity {
                 }, (d, which) -> {
                     switch (which) {
                         case 0: chooseViewport(); break;
-                        case 1: toggleMouse(); break;
-                        case 2: chooseMouseSpeed(); break;
-                        case 3: cursor.center(); break;
-                        case 4: editCredentials(); break;
-                        case 5: webView.reload(); break;
-                        case 6: clearSession(); break;
-                        case 7: updateManager.checkForUpdates(true); break;
+                        case 1:
+                            boolean enabled = !preferences.getBoolean("tv_focus", true);
+                            preferences.edit().putBoolean("tv_focus", enabled).apply();
+                            if (enabled && isTvCatalog(webView.getUrl()))
+                                TvFocusNavigation.install(webView);
+                            Toast.makeText(this,
+                                    enabled ? "TV-Fokusnavigation aktiviert" :
+                                            "Website-Tastensteuerung aktiviert",
+                                    Toast.LENGTH_SHORT).show();
+                            break;
+                        case 2: editCredentials(); break;
+                        case 3: webView.reload(); break;
+                        case 4: clearSession(); break;
+                        case 5: updateManager.checkForUpdates(true); break;
                         default: break;
                     }
                 })
@@ -251,159 +255,40 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
-    private void toggleMouse() {
-        mouseEnabled = !mouseEnabled;
-        preferences.edit().putBoolean("mouse_enabled", mouseEnabled).apply();
-        cursor.setVisibility(mouseEnabled ? View.VISIBLE : View.GONE);
-        Toast.makeText(this, mouseEnabled ? "Mauszeiger aktiviert" : "Mauszeiger deaktiviert",
-                Toast.LENGTH_SHORT).show();
-    }
-
-    private void chooseMouseSpeed() {
-        final String[] labels = {"Langsam", "Normal", "Schnell"};
-        int speed = Math.max(0, Math.min(2, preferences.getInt("mouse_speed", 1)));
-        new AlertDialog.Builder(this)
-                .setTitle("Mausgeschwindigkeit")
-                .setSingleChoiceItems(labels, speed, (dialog, selection) -> {
-                    preferences.edit().putInt("mouse_speed", selection).apply();
-                    dialog.dismiss();
-                })
-                .setNegativeButton("Abbrechen", null)
-                .show();
-    }
-
     /**
-     * Capture D-pad before WebView so HTML/iframe cookie dialogs can be clicked
-     * with physical touch events rather than cross-origin DOM injection.
+     * On catalog pages use spatial D-pad navigation instead of a cursor.
+     * The embedded 3Q player and native login forms keep their own key handling.
      */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        final int key = event.getKeyCode();
+        int key = event.getKeyCode();
         if (key == KeyEvent.KEYCODE_MENU) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
                 showSettings();
             return true;
         }
-        if (mouseEnabled && cursor != null && fullscreenView == null &&
-                (key == KeyEvent.KEYCODE_PAGE_DOWN || key == KeyEvent.KEYCODE_CHANNEL_DOWN ||
-                 key == KeyEvent.KEYCODE_PAGE_UP || key == KeyEvent.KEYCODE_CHANNEL_UP)) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-                int sign = (key == KeyEvent.KEYCODE_PAGE_DOWN || key == KeyEvent.KEYCODE_CHANNEL_DOWN) ? 1 : -1;
-                webView.scrollBy(0, Math.round(sign * webView.getHeight() * .65f));
-            }
-            return true;
-        }
-        if (mouseEnabled && cursor != null) {
-            int dx = 0;
-            int dy = 0;
+        if (isTvCatalog(webView.getUrl()) && preferences.getBoolean("tv_focus", true) &&
+                fullscreenView == null) {
+            String direction = null;
             switch (key) {
-                case KeyEvent.KEYCODE_DPAD_LEFT: dx = -1; break;
-                case KeyEvent.KEYCODE_DPAD_RIGHT: dx = 1; break;
-                case KeyEvent.KEYCODE_DPAD_UP: dy = -1; break;
-                case KeyEvent.KEYCODE_DPAD_DOWN: dy = 1; break;
+                case KeyEvent.KEYCODE_DPAD_LEFT: direction = "left"; break;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: direction = "right"; break;
+                case KeyEvent.KEYCODE_DPAD_UP: direction = "up"; break;
+                case KeyEvent.KEYCODE_DPAD_DOWN: direction = "down"; break;
                 case KeyEvent.KEYCODE_DPAD_CENTER:
                 case KeyEvent.KEYCODE_ENTER:
                 case KeyEvent.KEYCODE_NUMPAD_ENTER:
                     if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
-                        performMouseClick();
+                        TvFocusNavigation.activate(webView);
                     return true;
                 default: break;
             }
-            if (dx != 0 || dy != 0) {
-                if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                    int speed = Math.max(0, Math.min(2, preferences.getInt("mouse_speed", 1)));
-                    float baseDp = speed == 0 ? 22f : speed == 2 ? 70f : 42f;
-                    float acceleration = 1f + Math.min(12, event.getRepeatCount()) * .13f;
-                    cursor.move(dx * baseDp * acceleration * getResources().getDisplayMetrics().density,
-                                dy * baseDp * acceleration * getResources().getDisplayMetrics().density);
-                }
+            if (direction != null) {
+                if (event.getAction() == KeyEvent.ACTION_DOWN)
+                    TvFocusNavigation.move(webView, direction);
                 return true;
             }
         }
         return super.dispatchKeyEvent(event);
-    }
-
-    private void performMouseClick() {
-        View target = fullscreenView != null ? fullscreenView : webView;
-        if (target == null || target.getVisibility() != View.VISIBLE) return;
-        final int[] cursorLocation = new int[2];
-        final int[] targetLocation = new int[2];
-        cursor.getLocationOnScreen(cursorLocation);
-        target.getLocationOnScreen(targetLocation);
-        float x = cursor.getCursorX() + cursorLocation[0] - targetLocation[0];
-        float y = cursor.getCursorY() + cursorLocation[1] - targetLocation[1];
-        if (x < 0 || y < 0 || x >= target.getWidth() || y >= target.getHeight()) return;
-        long now = SystemClock.uptimeMillis();
-        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
-        MotionEvent up = MotionEvent.obtain(now, now + 90, MotionEvent.ACTION_UP, x, y, 0);
-        down.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        up.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        target.dispatchTouchEvent(down);
-        target.dispatchTouchEvent(up);
-        down.recycle();
-        up.recycle();
-    }
-
-    private static final class CursorOverlay extends View {
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final float density;
-        private float cursorX = -1f;
-        private float cursorY = -1f;
-
-        CursorOverlay(Context context) {
-            super(context);
-            density = context.getResources().getDisplayMetrics().density;
-            setFocusable(false);
-            setClickable(false);
-            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            fill.setStyle(Paint.Style.FILL);
-            fill.setColor(Color.rgb(0, 177, 235));
-            border.setStyle(Paint.Style.STROKE);
-            border.setStrokeWidth(2.7f * density);
-            border.setStrokeJoin(Paint.Join.ROUND);
-            border.setColor(Color.BLACK);
-        }
-
-        @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-            super.onSizeChanged(w, h, oldw, oldh);
-            if (cursorX < 0 || cursorY < 0) center();
-            else {
-                cursorX = Math.min(cursorX, Math.max(0, w - 1));
-                cursorY = Math.min(cursorY, Math.max(0, h - 1));
-            }
-        }
-
-        void center() {
-            cursorX = getWidth() * .5f;
-            cursorY = getHeight() * .5f;
-            invalidate();
-        }
-
-        void move(float x, float y) {
-            cursorX = Math.max(0, Math.min(getWidth() - 1f, cursorX + x));
-            cursorY = Math.max(0, Math.min(getHeight() - 1f, cursorY + y));
-            invalidate();
-        }
-
-        float getCursorX() { return cursorX; }
-        float getCursorY() { return cursorY; }
-
-        @Override protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            if (cursorX < 0 || cursorY < 0) return;
-            float s = density;
-            Path pointer = new Path();
-            pointer.moveTo(cursorX, cursorY);
-            pointer.lineTo(cursorX, cursorY + 35f * s);
-            pointer.lineTo(cursorX + 9f * s, cursorY + 26f * s);
-            pointer.lineTo(cursorX + 17f * s, cursorY + 42f * s);
-            pointer.lineTo(cursorX + 24f * s, cursorY + 38f * s);
-            pointer.lineTo(cursorX + 15f * s, cursorY + 23f * s);
-            pointer.lineTo(cursorX + 29f * s, cursorY + 22f * s);
-            pointer.close();
-            canvas.drawPath(pointer, fill);
-            canvas.drawPath(pointer, border);
-        }
     }
 
     private void chooseViewport() {
@@ -531,6 +416,10 @@ public final class MainActivity extends Activity {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             if (fullscreenView != null) {
                 hideVideo();
+                return true;
+            }
+            if (webView != null && webView.canGoBack()) {
+                webView.goBack();
                 return true;
             }
             long now = SystemClock.elapsedRealtime();

@@ -1,27 +1,23 @@
 # S04TV Fire Edition
 
-**Version 0.4.0 — TV-Login-Design, Anmeldehinweis & App-Assets**
+**Version 0.5.0 — TV-Fokusnavigation statt Mauszeiger**
 
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
 
-## Bedienung
+## Bedienung auf Fire TV
 
-- **Menü**: Einstellungen
-- **Zurück zweimal binnen 2 Sekunden**: App beenden
-- **Zurück im Video-Vollbild**: Vollbild verlassen
-- **Mauszeiger standardmäßig aktiviert**: Steuerkreuz bewegt den sichtbaren
-  Mauszeiger (auch bei Cookie-Bannern und im Videovollbild).
-- **OK**: Mausklick an der Cursorposition (synthetischer Android-Touch,
-  auch für im WebView eingebettete Frames).
-- **Menü → Mauszeiger ausschalten/einschalten**: zwischen Mausmodus und
-  normaler Webseiten-D-Pad-Navigation wechseln.
-- **Menü → Mausgeschwindigkeit**: Langsam / Normal / Schnell.
-- **Menü → Mauszeiger zentrieren**: Cursor in Bildschirmmitte versetzen.
-- **Menü → Updates prüfen / installieren**: Ein gemeinsamer Ablauf für Versionsprüfung, Download und Installation. Bereits heruntergeladene Updates werden erneut überprüft und direkt zur Installation angeboten.
-- **Automatische Prüfung** beim Start höchstens einmal pro 24 Stunden.
-- Eigenes blaues **S04TV-Icon** und TV-Banner mit Wortmarke (kein Vereinswappen).
-- Website im Vollbild, Navigation über die Fire-TV-Fernbedienung.
+- **Links / Rechts / Hoch / Runter**: Auf den S04TV-Übersichtsseiten zwischen sichtbaren Videokacheln, Karussells, Links, Buttons und Suchfeldern wechseln.
+- **OK**: fokussierte Videokachel / Schaltfläche öffnen; beim Suchfeld die Android-Tastatur öffnen.
+- **Cyanfarbener Rahmen**: zeigt die aktuell ausgewählte Videokachel; sie wird bei Bedarf automatisch in den Bildbereich gescrollt.
+- **Zurück**: vorherige Webseite öffnen; im Videovollbild zuerst Vollbild verlassen.
+- **Zurück zweimal innerhalb von 2 Sekunden auf der Startseite**: App beenden.
+- **Menü**: Einstellungen. **TV-Fokusnavigation ausschalten/einschalten** schaltet für Sonderfälle zur nativen WebView-Tastensteuerung um, ohne einen Mauszeiger einzublenden.
+- **Videodetailseite / 3Q-Videoplayer**: Die Pfeiltasten werden direkt an den originalen Player weitergereicht. Die WebView kann seine internen Buttons abhängig von der Fire-OS-Version und dem eingebetteten Player ggf. nicht fokussieren; eine echte Player-spezifische Implementierung wäre dann der nächste Schritt.
+- **Salesforce-Anmeldeseite**: originale Formularnavigation und TV-optimierte CSS-Darstellung bleiben erhalten.
+- **Updates prüfen / installieren**: gemeinsamer Ablauf für Versionsvergleich, Download, SHA-256-Prüfung und Android-Paketinstallation.
+
+Es werden keine Bildschirmkoordinaten und kein Mauszeiger verwendet. Der Fokuscontroller arbeitet auf den Videolinks der Originalwebsite. Er ersetzt nicht den originalen 3Q-Player und umgeht keinerlei Zugriffsschutz.
 
 ## Anmeldung
 
@@ -172,3 +168,7 @@ Dateinamen `app-release.apk`.
 - Im Mausmodus: **Steuerkreuz** = Cursor, **OK** = Klick; auf kompatiblen Fernbedienungen **Seite hoch/runter bzw. Kanal hoch/runter** = scrollen. Die Website außerhalb von `account.schalke04.de` erhält keine neuen CSS-Stile.
 - App-Icon und Android-TV-Leanback-Banner basieren auf den vom Nutzer bereitgestellten **S04TVplus_TV_Assets** und übernehmen deren originale Logo-Vektorpfade.
 - Der Updatepunkt im Menü vereint **Prüfen, Herunterladen und Installieren**. Die APK muss weiterhin vom Android-Paketinstaller bestätigt werden.
+
+## Version 0.5.0
+
+Der bisherige virtuelle Mauszeiger und dessen Geschwindigkeitsoptionen wurden entfernt. Auf `tv.schalke04.de` (außer den Video-Detailseiten) wird eine räumliche Fokusauswahl über den DOM-Elementen der bestehenden Website eingerichtet. Karussells werden soweit möglich über die vorhandenen Original-Schaltflächen weitergeschaltet. Die eingebetteten 3Q-Player erhalten weiterhin unveränderte Steuerkreuz-Ereignisse. Verifiziert ist der Code-Build; die Bedienung des Players muss auf einem Fire TV getestet werden.
