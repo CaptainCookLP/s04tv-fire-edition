@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.5.2 — TV-Fokus, Vollbilddarstellung und Zurück-Taste**
+**Version 0.5.3 — SPA-Navigation, 3Q-Playersteuerung und Diagnose**
 
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
@@ -183,3 +183,15 @@ Der Fokuscontroller erkennt beim Navigieren in die nächste Videoreihe auch zun�
 - **Steuerkreuz Hoch/Runter** bleibt beim Navigieren auf Videokacheln innerhalb der Videolinks und springt nicht mehr in die globale Menüleiste. Der Fokus bleibt stehen, wenn oberhalb kein weiteres Video vorhanden ist.
 - **Video automatisch bildschirmfüllend**: Die Original-Einbettung des 3Q-Players wird auf den Video-Detailseiten mithilfe von CSS auf die TV-Bildschirmgröße gebracht. Die originale Wiedergabe, Berechtigung und Stream-Logik bleiben unangetastet. Da die tatsächliche Player-Einbettung von der Website abhängt, ist die Darstellung auf einem Fire TV zu prüfen.
 - **Zurück-Taste** wird im Activity-Dispatch vor der WebView abgefangen. Aus Videoseiten geht es zur zuletzt besuchten S04TV-Übersichtsseite zurück. Unterseiten verwenden den WebView-Verlauf, auf der Startseite beendet doppeltes Zurück die App.
+
+
+## v0.5.3: Player-Fix und Diagnose (auf Fire TV zu überprüfen)
+
+- Der Player-Modus wird **auf jeder S04TV-Seite** installiert und erkennt Routenwechsel über `history.pushState` und das Beobachten der aktuellen URL. Das beseitigt die bisherige Lücke, bei der die Videoseite ohne `onPageFinished` angezeigt werden konnte.
+- Der Player-Finder sucht neben `iframe` auch sichtbare HTML5-`video`-Elemente und typische 3Q-Container. Die originale Einbettung bleibt erhalten, das gefundene Element wird für die Dauer der Videoseite bildschirmfüllend präsentiert.
+- **OK / Play-Pause** pausiert bzw. startet HTML5-Videos direkt; falls das Video in einem nicht zugänglichen Playerframe läuft, wird die dokumentierte 3Q-Taste **K** gesendet. **Links / Rechts** springen 10 Sekunden zurück/vor, soweit der Player dies erlaubt.
+- **Hoch** öffnet die native Playersteuerung, die auf Fire-TV-Fernbedienungen bedienbar ist.
+- **Menü → Player-Steuerung / Diagnose → Playerdiagnose anzeigen** zeigt nur den Status der Erkennung, die Anzahl von Video-/Iframe-Elementen und die erkannten Bildschirm-/Playergrößen an. Es werden keine Authentifizierungsdaten oder Stream-URLs angezeigt.
+- Wenn der Player weiterhin nicht bildschirmfüllend erscheint, ist die Diagnose der nächste notwendige Schritt; wir sollten nicht weiter mit unbestätigten CSS-Hypothesen neue Versionen erzeugen.
+
+Die dokumentierte 3Q-Web-SDK-Funktion **F** kann einen echten Vollbildwechsel auslösen, sofern der Playercontainer den Fokus hat. Die native Schaltfläche „Vollbild versuchen“ nutzt diese Fallback-Taste, wenn das eigene Layout den Bildschirm nicht füllt.

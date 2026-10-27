@@ -55,6 +55,7 @@ public final class MainActivity extends Activity {
     private final Handler loginPromptHandler = new Handler(Looper.getMainLooper());
     private Runnable pendingLoginCheck;
     private boolean loginPromptShown;
+    private String visitedUrl = HOME;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -90,7 +91,17 @@ public final class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest req) {
                 return !("https".equalsIgnoreCase(req.getUrl().getScheme()));
             }
+            @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+                super.doUpdateVisitedHistory(view, url, isReload);
+                visitedUrl = url;
+                if (isTvPage(url)) {
+                    // Trigger on client-side routing as well as regular page loads.
+                    VideoTvMode.present(view);
+                    if (isTvCatalog(url)) TvFocusNavigation.install(view);
+                }
+            }
             @Override public void onPageFinished(WebView view, String url) {
+                visitedUrl = url;
                 applyViewport();
                 if (isLoginPage(url)) {
                     // Presentation is scoped only to account.schalke04.de.
@@ -100,8 +111,10 @@ public final class MainActivity extends Activity {
                     LoginAutoFill.stop(view);
                     if (isTvPage(url)) {
                         scheduleLoginCheck();
+                        // Install on both catalog and detail pages; onPageFinished is
+                        // not fired on all SPA transitions.
+                        VideoTvMode.present(view);
                         if (isTvCatalog(url)) TvFocusNavigation.install(view);
-                        else if (isTvVideo(url)) VideoTvMode.present(view);
                     }
                 }
                 CookieManager.getInstance().flush();
@@ -235,7 +248,8 @@ public final class MainActivity extends Activity {
                         "Zugangsdaten",
                         "Website neu laden",
                         "Anmeldesitzung löschen",
-                        "Updates prüfen / installieren"
+                        "Updates prüfen / installieren",
+                        "Player-Steuerung / Diagnose"
                 }, (d, which) -> {
                     switch (which) {
                         case 0: chooseViewport(); break;
@@ -253,11 +267,51 @@ public final class MainActivity extends Activity {
                         case 3: webView.reload(); break;
                         case 4: clearSession(); break;
                         case 5: updateManager.checkForUpdates(true); break;
+                        case 6: showPlayerControls(); break;
                         default: break;
                     }
                 })
                 .setNegativeButton("Schließen", null)
                 .show();
+    }
+
+    private void showPlayerControls() {
+        if (!isTvVideo(visitedUrl)) {
+            Toast.makeText(this, "Playersteuerung nur auf Videoseiten verfügbar", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("S04TV+ Player")
+                .setItems(new String[]{
+                        "Wiedergabe / Pause",
+                        "10 Sekunden zurück",
+                        "10 Sekunden vor",
+                        "Vollbild versuchen",
+                        "Playerdiagnose anzeigen",
+                        "Zurück zur Videoübersicht"
+                }, (dialog, which) -> {
+                    switch (which) {
+                        case 0: VideoTvMode.toggle(webView); break;
+                        case 1: VideoTvMode.navigate(webView, "back10"); break;
+                        case 2: VideoTvMode.navigate(webView, "next10"); break;
+                        case 3: VideoTvMode.fullscreen(webView); break;
+                        case 4: showPlayerDiagnostics(); break;
+                        case 5: handleBack(); break;
+                        default: break;
+                    }
+                })
+                .setNegativeButton("Schließen", null).show();
+    }
+
+    private void showPlayerDiagnostics() {
+        VideoTvMode.diagnose(webView, info -> {
+            if (!isFinishing() && !isDestroyed())
+                new AlertDialog.Builder(this)
+                        .setTitle("3Q-Playerdiagnose")
+                        .setMessage(info)
+                        .setPositiveButton("OK", null)
+                        .show();
+        });
     }
 
     /**
@@ -279,7 +333,31 @@ public final class MainActivity extends Activity {
                 showSettings();
             return true;
         }
-        if (isTvCatalog(webView.getUrl()) && preferences.getBoolean("tv_focus", true) &&
+        if (isTvVideo(visitedUrl) && fullscreenView == null) {
+            switch (key) {
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER:
+                case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                        VideoTvMode.toggle(webView);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                        showPlayerControls();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                        VideoTvMode.navigate(webView, "back10");
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                        VideoTvMode.navigate(webView, "next10");
+                    return true;
+                default: break;
+            }
+        }
+        if (isTvCatalog(visitedUrl) && preferences.getBoolean("tv_focus", true) &&
                 fullscreenView == null) {
             String direction = null;
             switch (key) {
@@ -427,7 +505,7 @@ public final class MainActivity extends Activity {
             return;
         }
         if (webView != null) {
-            if (isTvVideo(webView.getUrl())) {
+            if (isTvVideo(visitedUrl)) {
                 // The webview history can contain redirects/player frames;
                 // return directly to the nearest S04TV catalog, if available.
                 android.webkit.WebBackForwardList history = webView.copyBackForwardList();
