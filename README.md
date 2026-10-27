@@ -1,19 +1,19 @@
 # S04TV Fire Edition
 
-**Version 0.5.1 — TV-Fokusnavigation statt Mauszeiger**
+**Version 0.5.2 — TV-Fokus, Vollbilddarstellung und Zurück-Taste**
 
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
 
 ## Bedienung auf Fire TV
 
-- **Links / Rechts / Hoch / Runter**: Auf den S04TV-Übersichtsseiten zwischen sichtbaren Videokacheln, Karussells, Links, Buttons und Suchfeldern wechseln.
+- **Links / Rechts**: zwischen Videokacheln wechseln. **Hoch / Runter**: beim Navigieren zwischen Videos ausschließlich zu Videokacheln der vorherigen/nächsten Reihe wechseln, ohne unbeabsichtigt in die Menüleiste zu springen.
 - **OK**: fokussierte Videokachel / Schaltfläche öffnen; beim Suchfeld die Android-Tastatur öffnen.
 - **Cyanfarbener Rahmen**: zeigt die aktuell ausgewählte Videokachel; sie wird bei Bedarf automatisch in den Bildbereich gescrollt.
-- **Zurück**: vorherige Webseite öffnen; im Videovollbild zuerst Vollbild verlassen.
+- **Zurück**: aus der Videowiedergabe zur vorherigen Videoübersicht zurückkehren. In nativem Android-Player-Vollbild wird zuerst das Vollbild beendet. Bei anderen Seiten wird der Browserverlauf verwendet.
 - **Zurück zweimal innerhalb von 2 Sekunden auf der Startseite**: App beenden.
 - **Menü**: Einstellungen. **TV-Fokusnavigation ausschalten/einschalten** schaltet für Sonderfälle zur nativen WebView-Tastensteuerung um, ohne einen Mauszeiger einzublenden.
-- **Videodetailseite / 3Q-Videoplayer**: Die Pfeiltasten werden direkt an den originalen Player weitergereicht. Die WebView kann seine internen Buttons abhängig von der Fire-OS-Version und dem eingebetteten Player ggf. nicht fokussieren; eine echte Player-spezifische Implementierung wäre dann der nächste Schritt.
+- **Videodetailseite / 3Q-Videoplayer**: das originale Player-Element wird automatisch bildschirmfüllend dargestellt (Kiosk-Darstellung über CSS, kein Klick auf den Vor-/Zurückspulbereich und kein erzwungener Browser-Fullscreen-Aufruf). Die 3Q-Player-Tastensteuerung bleibt unverändert und muss auf Fire TV geprüft werden.
 - **Salesforce-Anmeldeseite**: originale Formularnavigation und TV-optimierte CSS-Darstellung bleiben erhalten.
 - **Updates prüfen / installieren**: gemeinsamer Ablauf für Versionsvergleich, Download, SHA-256-Prüfung und Android-Paketinstallation.
 
@@ -176,3 +176,10 @@ Der bisherige virtuelle Mauszeiger und dessen Geschwindigkeitsoptionen wurden en
 ### v0.5.1: Verbesserte Fokusführung
 
 Der Fokuscontroller erkennt beim Navigieren in die nächste Videoreihe auch zunächst außerhalb des sichtbaren Fensters liegende Kacheln und berechnet den Fokusmittelpunkt nach dem Scrollen neu.
+
+
+## v0.5.2: TV-Korrekturen
+
+- **Steuerkreuz Hoch/Runter** bleibt beim Navigieren auf Videokacheln innerhalb der Videolinks und springt nicht mehr in die globale Menüleiste. Der Fokus bleibt stehen, wenn oberhalb kein weiteres Video vorhanden ist.
+- **Video automatisch bildschirmfüllend**: Die Original-Einbettung des 3Q-Players wird auf den Video-Detailseiten mithilfe von CSS auf die TV-Bildschirmgröße gebracht. Die originale Wiedergabe, Berechtigung und Stream-Logik bleiben unangetastet. Da die tatsächliche Player-Einbettung von der Website abhängt, ist die Darstellung auf einem Fire TV zu prüfen.
+- **Zurück-Taste** wird im Activity-Dispatch vor der WebView abgefangen. Aus Videoseiten geht es zur zuletzt besuchten S04TV-Übersichtsseite zurück. Unterseiten verwenden den WebView-Verlauf, auf der Startseite beendet doppeltes Zurück die App.

@@ -101,6 +101,7 @@ public final class MainActivity extends Activity {
                     if (isTvPage(url)) {
                         scheduleLoginCheck();
                         if (isTvCatalog(url)) TvFocusNavigation.install(view);
+                        else if (isTvVideo(url)) VideoTvMode.present(view);
                     }
                 }
                 CookieManager.getInstance().flush();
@@ -151,10 +152,14 @@ public final class MainActivity extends Activity {
     }
 
     private boolean isTvCatalog(String url) {
+        return isTvPage(url) && !isTvVideo(url);
+    }
+
+    private boolean isTvVideo(String url) {
         if (!isTvPage(url)) return false;
         try {
             String path = android.net.Uri.parse(url).getPath();
-            return path == null || !path.startsWith("/videos/");
+            return path != null && path.startsWith("/videos/");
         } catch (Exception ignored) { return false; }
     }
 
@@ -261,6 +266,14 @@ public final class MainActivity extends Activity {
      */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
+        // Fire TV/Android WebView can consume Back before Activity.onKeyDown.
+        // Handle it first, including both native fullscreen and web history.
+        if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_ESCAPE ||
+                key == KeyEvent.KEYCODE_BUTTON_B) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                handleBack();
+            return true;
+        }
         if (key == KeyEvent.KEYCODE_MENU) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
                 showSettings();
@@ -408,30 +421,51 @@ public final class MainActivity extends Activity {
         fullscreenCallback = null;
     }
 
-    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_MENU) {
-            showSettings();
-            return true;
+    private void handleBack() {
+        if (fullscreenView != null) {
+            hideVideo();
+            return;
         }
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (fullscreenView != null) {
-                hideVideo();
-                return true;
+        if (webView != null) {
+            if (isTvVideo(webView.getUrl())) {
+                // The webview history can contain redirects/player frames;
+                // return directly to the nearest S04TV catalog, if available.
+                android.webkit.WebBackForwardList history = webView.copyBackForwardList();
+                int index = history.getCurrentIndex();
+                for (int previous = index - 1; previous >= 0; previous--) {
+                    android.webkit.WebHistoryItem item = history.getItemAtIndex(previous);
+                    if (item != null && isTvCatalog(item.getUrl())) {
+                        webView.goBackOrForward(previous - index);
+                        return;
+                    }
+                }
+                webView.loadUrl(HOME);
+                return;
             }
-            if (webView != null && webView.canGoBack()) {
+            if (webView.canGoBack()) {
                 webView.goBack();
-                return true;
+                return;
             }
-            long now = SystemClock.elapsedRealtime();
-            if (now - lastBackPress <= 2000) {
-                finish();
-            } else {
-                lastBackPress = now;
-                Toast.makeText(this, "Erneut Zurück drücken zum Beenden", Toast.LENGTH_SHORT).show();
-            }
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastBackPress <= 2000) finish();
+        else {
+            lastBackPress = now;
+            Toast.makeText(this, "Erneut Zurück drücken zum Beenden", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE ||
+                keyCode == KeyEvent.KEYCODE_BUTTON_B) {
+            handleBack();
             return true;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override public void onBackPressed() {
+        handleBack();
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
