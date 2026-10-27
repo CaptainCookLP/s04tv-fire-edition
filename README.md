@@ -195,3 +195,7 @@ Der Fokuscontroller erkennt beim Navigieren in die nächste Videoreihe auch zun�
 - Wenn der Player weiterhin nicht bildschirmfüllend erscheint, ist die Diagnose der nächste notwendige Schritt; wir sollten nicht weiter mit unbestätigten CSS-Hypothesen neue Versionen erzeugen.
 
 Die dokumentierte 3Q-Web-SDK-Funktion **F** kann einen echten Vollbildwechsel auslösen, sofern der Playercontainer den Fokus hat. Die native Schaltfläche „Vollbild versuchen“ nutzt diese Fallback-Taste, wenn das eigene Layout den Bildschirm nicht füllt.
+
+### Rückmeldung zur Playerdiagnose
+
+Wenn weiterhin kein Vollbild erscheint: Auf einer S04TV-Videoseite **Menü → Player-Steuerung / Diagnose → Playerdiagnose anzeigen** öffnen. Für einen Fehlerbericht die Felder `mode`, `videos`, `iframes`, `screen`, `player` und `directMedia` abschreiben. Die Diagnose enthält keine Anmeldedaten und keine Stream-URLs. Zusätzlich Fire-TV-Modell und Fire-OS-Version notieren.
