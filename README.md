@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.5.0 — TV-Fokusnavigation statt Mauszeiger**
+**Version 0.5.1 — TV-Fokusnavigation statt Mauszeiger**
 
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
@@ -172,3 +172,7 @@ Dateinamen `app-release.apk`.
 ## Version 0.5.0
 
 Der bisherige virtuelle Mauszeiger und dessen Geschwindigkeitsoptionen wurden entfernt. Auf `tv.schalke04.de` (außer den Video-Detailseiten) wird eine räumliche Fokusauswahl über den DOM-Elementen der bestehenden Website eingerichtet. Karussells werden soweit möglich über die vorhandenen Original-Schaltflächen weitergeschaltet. Die eingebetteten 3Q-Player erhalten weiterhin unveränderte Steuerkreuz-Ereignisse. Verifiziert ist der Code-Build; die Bedienung des Players muss auf einem Fire TV getestet werden.
+
+### v0.5.1: Verbesserte Fokusführung
+
+Der Fokuscontroller erkennt beim Navigieren in die nächste Videoreihe auch zunächst außerhalb des sichtbaren Fensters liegende Kacheln und berechnet den Fokusmittelpunkt nach dem Scrollen neu.
