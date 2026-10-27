@@ -15,6 +15,7 @@ final class StartupSplash extends FrameLayout {
     private final TextView status;
     private final TextView percent;
     private final ProgressBar indicator;
+    private final TextView updateStatus;
 
     StartupSplash(Activity activity) {
         super(activity);
@@ -55,7 +56,7 @@ final class StartupSplash extends FrameLayout {
         center.addView(indicator, progressLayout);
 
         status = new TextView(activity);
-        status.setText("Prüfe auf Updates …");
+        status.setText("Prüfe gespeicherte Inhalte …");
         status.setTextColor(Color.WHITE);
         status.setGravity(Gravity.CENTER);
         status.setTextSize(18);
@@ -69,9 +70,19 @@ final class StartupSplash extends FrameLayout {
         percent.setGravity(Gravity.CENTER);
         percent.setTextSize(14);
         center.addView(percent, new LinearLayout.LayoutParams(-1, 24*d));
+        updateStatus = new TextView(activity);
+        updateStatus.setText("Updateprüfung läuft parallel …");
+        updateStatus.setTextColor(Color.rgb(149, 178, 207));
+        updateStatus.setGravity(Gravity.CENTER);
+        updateStatus.setTextSize(14);
+        LinearLayout.LayoutParams updateLayout = new LinearLayout.LayoutParams(-1, 34*d);
+        updateLayout.topMargin = 10*d;
+        center.addView(updateStatus, updateLayout);
     }
 
     void status(String message) { status.setText(message); }
+
+    void updateStatus(String message) { updateStatus.setText(message); }
 
     void progress(int progress) {
         indicator.setIndeterminate(false);

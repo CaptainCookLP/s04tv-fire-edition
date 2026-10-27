@@ -170,6 +170,39 @@ final class PersistentAssetCache {
         }
     }
 
+    /** Validate private, persisted images before startup. Active page requests
+     * refresh expired resources on demand while WebView loads under the splash.
+     * No authenticated resources or video segments are ever preloaded.
+     */
+    synchronized int[] prepare() {
+        int retained = 0, expired = 0;
+        File[] files = folder.listFiles();
+        if (files == null) return new int[]{0, 0};
+        long now = System.currentTimeMillis();
+        for (File file : files) {
+            if (!file.isFile()) continue;
+            if (!file.getName().endsWith(".img") ||
+                    file.length() < 9 || file.length() > MAX_ENTRY + 8L) {
+                file.delete();
+                expired++;
+                continue;
+            }
+            try (DataInputStream in = new DataInputStream(new FileInputStream(file))) {
+                long created = in.readLong();
+                if (created <= 0 || created > now ||
+                        now - created > MAX_AGE) {
+                    file.delete();
+                    expired++;
+                } else retained++;
+            } catch (Exception error) {
+                file.delete();
+                expired++;
+            }
+        }
+        trim();
+        return new int[]{retained, expired};
+    }
+
     synchronized void clear() {
         File[] files = folder.listFiles();
         if (files != null) for (File file : files) file.delete();

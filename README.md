@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.6.1 – Autoplay, Back-Fix, dauerhafter Bildercache und Startbildschirm**
+**Version 0.7.0 – Cache-first-Start und verpflichtende Updateinstallation**
 
 Inoffizielle Fire-TV-/Android-TV-App für https://tv.schalke04.de/. Kein offizielles Produkt des FC Schalke 04. Anmeldung, Inhalte und Zugriffsrechte werden vollständig von S04TV und 3Q bereitgestellt. Keine Umgehung von DRM, Abonnements oder Ein-Gerät-Regeln.
 
@@ -80,3 +80,18 @@ Einstellungen: **Darstellungsgröße** passt nur die virtuelle CSS-Viewportbreit
 
 ### Testschwerpunkte
 Nach dem APK-Update Startscreen mit GitHub-Updateprüfung, bereits gecachte Videokacheln nach Neustart, automatischen Start von VoD, Pause per OK und Rückkehr mit einer einzigen Zurück-Taste im Videovollbild testen. Geschützte Live-Videos separat prüfen.
+
+## v0.7.0 – Cache zuerst, Updateprüfung parallel
+
+Der Ladebildschirm deckt die WebView ab, während die Website bereits **unsichtbar für den Benutzer, aber technisch sichtbar und aktiv unter dem Overlay** lädt:
+
+1. Die App liest den **dauerhaft gespeicherten Bildercache** aus ihrem privaten App-Verzeichnis, entfernt beschädigte und abgelaufene Daten und hält gültige Einträge zur Wiederverwendung bereit.
+2. Die WebView lädt die S04TV-Startseite mit ihrem normalen HTTP-Cache (`LOAD_DEFAULT`), überprüft/aktualisiert Ressourcen nach Server-Caching-Regeln und speichert neue, explizit anonyme Bilder im dauerhaften Bildercache.
+3. **Parallel** fragt die App bei jedem Start GitHub Releases nach einer aktuelleren App-Version.
+4. Der Ladebildschirm wird nur ausgeblendet, wenn Cacheprüfung, erster Seitenaufbau und Updateprüfung abgeschlossen sind. Bei sehr langsamen Seiten gibt es einen zeitlichen Fallback; ein gefundenes Pflichtupdate sperrt die Website unabhängig davon weiterhin.
+5. Ist eine neuere Version verfügbar, erscheint **erst nach der Cache-/Websitevorbereitung** die nicht wegklickbare Pflichtaktualisierung mit **„Jetzt installieren“** oder **„App schließen“**. Es gibt im Startablauf keine „Später“-Option.
+6. Nach „Jetzt installieren“ lädt die App die signierte APK von GitHub, prüft den SHA-256-Digest und öffnet den Android-Paketinstaller. Die App kann die systemseitige Installationsbestätigung **nicht selbst erteilen oder umgehen**. Wenn die Installation abgebrochen wird, bleibt die bisherige App-Version gesperrt und die Aktualisierung wird erneut angeboten.
+
+Wenn GitHub wegen fehlender Netzwerkverbindung/Timeout nicht geprüft werden kann, ist die Updatepflicht **nicht nachweisbar**; dann darf die gecachte Website im Offline-/Fehlerfall dennoch starten. Ein später eintreffendes positives Ergebnis sperrt die Website sofort wieder. Bei normalem Start wird jeden App-Start erneut geprüft.
+
+**Cache-Grenzen:** Der private Bildcache überlebt normale App-Neustarts und wird beim Löschen von App-Daten/deinstallieren entfernt. Geschützte Videos, Cookies, DRM und personalisierte Inhalte werden nicht in diesen eigenen Bildcache übertragen. Für JS/CSS und Drittanbieter-Caches gelten die Standard-HTTP-/WebView-Regeln.

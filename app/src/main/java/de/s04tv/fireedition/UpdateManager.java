@@ -42,6 +42,12 @@ final class UpdateManager {
     private final DownloadManager downloads;
     private boolean receiverRegistered = false;
     private boolean pendingPermission = false;
+    private String requiredTag;
+    private String requiredUrl;
+    private String requiredSha;
+    private boolean mandatoryDownloadStarted;
+    private boolean installerOpen;
+    private AlertDialog requiredDialog;
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -62,7 +68,7 @@ final class UpdateManager {
 
     interface StartupListener {
         void onStatus(String message);
-        void onFinished();
+        void onChecked(boolean updateAvailable);
     }
 
     // Always check when starting. Called while the startup splash is covering the WebView.
@@ -81,10 +87,62 @@ final class UpdateManager {
         });
     }
 
-    private void startupDone(StartupListener listener) {
+    private void startupChecked(StartupListener listener, boolean available) {
         if (listener == null) return;
         activity.runOnUiThread(() -> {
-            if (!activity.isFinishing() && !activity.isDestroyed()) listener.onFinished();
+            if (!activity.isFinishing() && !activity.isDestroyed())
+                listener.onChecked(available);
+        });
+    }
+
+    boolean hasRequiredUpdate() {
+        return requiredTag != null;
+    }
+
+    void showRequiredUpdateDialog() {
+        if (!hasRequiredUpdate() || activity.isFinishing() || activity.isDestroyed()) return;
+        if (mandatoryDownloadStarted || installerOpen ||
+                (requiredDialog != null && requiredDialog.isShowing())) return;
+        final String target = requiredTag;
+        requiredDialog = new AlertDialog.Builder(activity)
+                .setTitle("Update erforderlich: " + target)
+                .setMessage("Eine neue Version von S04TV Fire Edition ist verfügbar. " +
+                        "Die App wird erst nach der Installation fortgesetzt. " +
+                        "Du kannst das Update jetzt installieren oder die App schließen.")
+                .setPositiveButton("Jetzt installieren", (dialog, which) -> startRequiredInstall())
+                .setNegativeButton("App schließen", (dialog, which) -> activity.finish())
+                .setCancelable(false)
+                .create();
+        requiredDialog.show();
+    }
+
+    private void startRequiredInstall() {
+        if (!hasRequiredUpdate()) return;
+        mandatoryDownloadStarted = true;
+        boolean cached = requiredSha.equals(prefs.getString("update_expected_sha256", "")) &&
+                requiredTag.equals(prefs.getString("update_download_version", "")) &&
+                updateFile() != null && updateFile().isFile();
+        if (cached) verifyFileAndInstall();
+        else downloadUpdate(requiredUrl, requiredSha, requiredTag);
+    }
+
+    private void requiredFailure(String message) {
+        activity.runOnUiThread(() -> {
+            if (activity.isFinishing() || activity.isDestroyed()) return;
+            mandatoryDownloadStarted = false;
+            installerOpen = false;
+            if (requiredDialog != null) requiredDialog.dismiss();
+            requiredDialog = new AlertDialog.Builder(activity)
+                    .setTitle("Update konnte nicht installiert werden")
+                    .setMessage(message + "\n\nFür die Nutzung ist die aktuelle App-Version erforderlich.")
+                    .setPositiveButton("Erneut versuchen", (dialog, which) -> {
+                        requiredDialog = null;
+                        startRequiredInstall();
+                    })
+                    .setNegativeButton("App schließen", (dialog, which) -> activity.finish())
+                    .setCancelable(false)
+                    .create();
+            requiredDialog.show();
         });
     }
 
@@ -109,7 +167,7 @@ final class UpdateManager {
                     if (manual) notifyDialog("Keine Veröffentlichung",
                             "Auf GitHub ist noch kein Release verfügbar.");
                     startupStatus(startupListener, "Keine Veröffentlichung gefunden");
-                    startupDone(startupListener);
+                    startupChecked(startupListener, false);
                     return;
                 }
                 if (status != 200) throw new IllegalStateException("GitHub HTTP " + status);
@@ -143,7 +201,7 @@ final class UpdateManager {
                     if (manual) notifyDialog("S04TV ist aktuell",
                             "Installiert: v" + installed + "\nGitHub Release: " + tag);
                     startupStatus(startupListener, "S04TV ist aktuell (v" + installed + ")");
-                    startupDone(startupListener);
+                    startupChecked(startupListener, false);
                     return;
                 }
                 if (apk == null) throw new IllegalStateException("Kein APK im GitHub Release");
@@ -158,6 +216,14 @@ final class UpdateManager {
                     throw new IllegalStateException("Release hat keine prüfbare SHA-256-Signatur");
                 }
                 String sha256 = digest.substring("sha256:".length());
+                if (startupListener != null) {
+                    requiredTag = tag;
+                    requiredUrl = url;
+                    requiredSha = sha256;
+                    startupStatus(startupListener, "Neue Version " + tag + " gefunden");
+                    startupChecked(startupListener, true);
+                    return;
+                }
                 boolean cached = sha256.equals(prefs.getString("update_expected_sha256", "")) &&
                         tag.equals(prefs.getString("update_download_version", "")) &&
                         updateFile() != null && updateFile().isFile();
@@ -187,7 +253,7 @@ final class UpdateManager {
                         "GitHub konnte nicht geprüft werden: " + exception.getMessage());
                 // Never block startup if GitHub is offline or the network times out.
                 startupStatus(startupListener, "Updateprüfung derzeit nicht möglich");
-                startupDone(startupListener);
+                startupChecked(startupListener, false);
             } finally {
                 if (connection != null) connection.disconnect();
             }
@@ -229,7 +295,9 @@ final class UpdateManager {
                     .putString("update_download_version", tag).apply();
             toast("Update wird heruntergeladen");
         } catch (Exception error) {
-            notifyDialog("Download fehlgeschlagen", error.getMessage());
+            if (hasRequiredUpdate() && mandatoryDownloadStarted)
+                requiredFailure(error.getMessage());
+            else notifyDialog("Download fehlgeschlagen", error.getMessage());
         }
     }
 
@@ -294,8 +362,11 @@ final class UpdateManager {
                         } catch (Exception e) {
                             notifyDialog("Einstellungen", "Öffne die Fire-TV-Einstellungen und aktiviere die Installation unbekannter Apps für S04TV.");
                         }
-                    }).setNegativeButton("Abbrechen", (dialog, which) ->
-                            pendingPermission = false).show();
+                    }).setNegativeButton("Abbrechen", (dialog, which) -> {
+                        pendingPermission = false;
+                        if (hasRequiredUpdate()) requiredFailure(
+                                "Installation unbekannter Apps wurde nicht erlaubt.");
+                    }).show();
             return;
         }
         pendingPermission = false;
@@ -305,18 +376,37 @@ final class UpdateManager {
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(uri, "application/vnd.android.package-archive");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (hasRequiredUpdate()) installerOpen = true;
             activity.startActivity(intent);
         } catch (Exception e) {
+            installerOpen = false;
             notifyDialog("Installation nicht möglich",
                     "Der APK-Installer konnte nicht gestartet werden: " + e.getMessage());
         }
     }
 
     void onResume() {
-        if (pendingPermission && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-                activity.getPackageManager().canRequestPackageInstalls())) {
-            pendingPermission = false;
-            verifyFileAndInstall();
+        if (pendingPermission) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                    activity.getPackageManager().canRequestPackageInstalls()) {
+                pendingPermission = false;
+                verifyFileAndInstall();
+            } else {
+                // If the user returned from unknown-source settings without
+                // granting permission, do not leave the splash blocked forever.
+                pendingPermission = false;
+                if (hasRequiredUpdate()) requiredFailure(
+                        "Installation unbekannter Apps muss erlaubt werden.");
+            }
+            return;
+        }
+        if (hasRequiredUpdate() && installerOpen) {
+            // Android's package installer returned without replacing this process.
+            // Keep the splash active and require another install attempt.
+            installerOpen = false;
+            mandatoryDownloadStarted = false;
+            activity.getWindow().getDecorView().postDelayed(
+                    this::showRequiredUpdateDialog, 700);
         }
     }
 
@@ -327,6 +417,10 @@ final class UpdateManager {
     }
 
     private void notifyDialog(String title, String message) {
+        if (hasRequiredUpdate() && mandatoryDownloadStarted) {
+            requiredFailure(title + ": " + message);
+            return;
+        }
         activity.runOnUiThread(() -> {
             if (!activity.isFinishing() && !activity.isDestroyed()) {
                 new AlertDialog.Builder(activity).setTitle(title).setMessage(message)
@@ -339,6 +433,10 @@ final class UpdateManager {
         if (receiverRegistered) {
             activity.unregisterReceiver(receiver);
             receiverRegistered = false;
+        }
+        if (requiredDialog != null) {
+            requiredDialog.dismiss();
+            requiredDialog = null;
         }
     }
 }

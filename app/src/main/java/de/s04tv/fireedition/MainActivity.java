@@ -64,6 +64,10 @@ public final class MainActivity extends Activity {
     private Runnable startupTimeout;
     private Bundle restoredWebState;
     private boolean websiteStarted;
+    private boolean websiteReady;
+    private boolean cacheReviewed;
+    private boolean updateChecked;
+    private boolean updateRequired;
     private boolean leavingVideo;
     private String lastCatalogUrl = HOME;
     private long lastVideoBackTime;
@@ -105,7 +109,8 @@ public final class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 cancelLoginCheck();
-                if (startupSplash != null) startupSplash.status("Lade S04TV+ …");
+                if (startupSplash != null)
+                    startupSplash.status("Lade Website und aktualisiere den Cache …");
             }
             @Override public WebResourceResponse shouldInterceptRequest(
                     WebView view, WebResourceRequest request) {
@@ -151,7 +156,8 @@ public final class MainActivity extends Activity {
                 }
                 CookieManager.getInstance().flush();
                 if (websiteStarted && startupSplash != null) {
-                    startupHandler.postDelayed(thisActivityReady(), 250);
+                    // onPageFinished does not mean every image is done loading.
+                    startupHandler.postDelayed(thisActivityReady(), 850);
                 }
             }
         });
@@ -174,25 +180,63 @@ public final class MainActivity extends Activity {
             }
             @Override public void onHideCustomView() { hideVideo(); }
         });
-        // Keep all web content covered until the startup update decision is made.
-        webView.setVisibility(View.INVISIBLE);
+        // Load and revalidate the website/images BEHIND the splash immediately.
+        // Update lookup runs independently and never blocks cache warming.
         startupSplash = new StartupSplash(this);
         root.addView(startupSplash, new FrameLayout.LayoutParams(-1, -1));
         startupSplash.bringToFront();
         startupSplash.requestFocus();
-        startupTimeout = () -> startWebsite("Netzwerkprüfung abgeschlossen – lade S04TV+ …");
-        startupHandler.postDelayed(startupTimeout, 10500);
+
+        new Thread(() -> {
+            int[] count = assetCache.prepare();
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                cacheReviewed = true;
+                if (startupSplash != null) startupSplash.status(
+                        "Cache geprüft: " + count[0] + " Bilder bereit · Lade aktuelle Inhalte …");
+                maybeFinishStartup();
+            });
+        }, "s04tv-cache-prepare").start();
+
+        startWebsite("Lade Website und aktualisiere den Cache …");
         updateManager.checkAtStartup(new UpdateManager.StartupListener() {
             @Override public void onStatus(String text) {
-                if (startupSplash != null) startupSplash.status(text);
-                // An available update dialog must be handled before showing the website.
-                if (text.startsWith("Update ") && text.contains(" verfügbar"))
-                    startupHandler.removeCallbacks(startupTimeout);
+                if (startupSplash != null) startupSplash.updateStatus(text);
             }
-            @Override public void onFinished() {
-                startWebsite("Lade S04TV+ …");
+            @Override public void onChecked(boolean available) {
+                updateChecked = true;
+                updateRequired = available;
+                if (available && startupSplash == null) {
+                    // The offline watchdog might have revealed the website.
+                    // A late positive update result must re-block it immediately.
+                    startupSplash = new StartupSplash(MainActivity.this);
+                    root.addView(startupSplash, new FrameLayout.LayoutParams(-1, -1));
+                    startupSplash.bringToFront();
+                    startupSplash.requestFocus();
+                }
+                if (startupSplash != null) startupSplash.updateStatus(
+                        available ? "Update erforderlich · Installation folgt" :
+                                "Updateprüfung abgeschlossen");
+                maybeFinishStartup();
             }
         });
+        // Never leave the app stuck when the site has stalled. The separate
+        // update check still gates the website until resolved.
+        startupTimeout = () -> {
+            websiteReady = true;
+            cacheReviewed = true;
+            maybeFinishStartup();
+        };
+        startupHandler.postDelayed(startupTimeout, 25000);
+        // Network has explicit connect/read timeouts; handle an unexpected
+        // stalled worker as offline and still gate later positive results.
+        startupHandler.postDelayed(() -> {
+            if (!updateChecked && startupSplash != null) {
+                updateChecked = true;
+                startupSplash.updateStatus("Updateprüfung nicht erreichbar (Offline-Modus)");
+                maybeFinishStartup();
+            }
+        }, 16000);
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
@@ -201,25 +245,37 @@ public final class MainActivity extends Activity {
 
     private Runnable thisActivityReady() {
         return () -> {
-            if (startupSplash == null || !websiteStarted || isFinishing()) return;
-            startupSplash.dismiss();
-            startupSplash = null;
-            if (webView != null && fullscreenView == null) webView.requestFocus();
+            if (!websiteStarted || isFinishing() || isDestroyed()) return;
+            websiteReady = true;
+            maybeFinishStartup();
         };
+    }
+
+    private void maybeFinishStartup() {
+        if (startupSplash == null || !websiteReady || !cacheReviewed || !updateChecked)
+            return;
+        if (updateRequired) {
+            startupSplash.status("Cache bereit · Neue Version erforderlich");
+            startupSplash.updateStatus("Bitte das Update jetzt installieren");
+            updateManager.showRequiredUpdateDialog();
+            return;
+        }
+        startupSplash.dismiss();
+        startupSplash = null;
+        startupHandler.removeCallbacks(startupTimeout);
+        if (webView != null && fullscreenView == null) webView.requestFocus();
     }
 
     private void startWebsite(String message) {
         if (websiteStarted || isFinishing() || isDestroyed()) return;
         websiteStarted = true;
-        if (startupTimeout != null) startupHandler.removeCallbacks(startupTimeout);
         if (startupSplash != null) startupSplash.status(message);
+        // WebView must remain VISIBLE to render/load images under the overlay.
         webView.setVisibility(View.VISIBLE);
         if (restoredWebState != null) {
             if (webView.restoreState(restoredWebState) == null) webView.loadUrl(HOME);
             restoredWebState = null;
         } else webView.loadUrl(HOME);
-        // Loading and redirects must not leave a permanent blocking overlay.
-        startupHandler.postDelayed(thisActivityReady(), 20000);
     }
 
     private boolean isLoginPage(String url) {
@@ -423,6 +479,14 @@ public final class MainActivity extends Activity {
      */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
+        if (startupSplash != null) {
+            // Never allow D-pad/OK to reach preloaded content during the update gate.
+            if ((key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_ESCAPE ||
+                    key == KeyEvent.KEYCODE_BUTTON_B) &&
+                    event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
+                finish();
+            return true;
+        }
         // Fire TV/Android WebView can consume Back before Activity.onKeyDown.
         // Handle it first, including both native fullscreen and web history.
         if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_ESCAPE ||
@@ -613,6 +677,10 @@ public final class MainActivity extends Activity {
     }
 
     private void handleBack() {
+        if (startupSplash != null) {
+            finish();
+            return;
+        }
         long now = SystemClock.elapsedRealtime();
         if (now - lastVideoBackTime < 450) return; // avoid duplicate API33 + key callbacks
         if (isTvVideo(visitedUrl) || fullscreenView != null) {

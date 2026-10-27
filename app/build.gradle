@@ -14,8 +14,8 @@ android {
         applicationId 'de.s04tv.fireedition'
         minSdk 23
         targetSdk 33
-        versionCode 11
-        versionName '0.6.1'
+        versionCode 12
+        versionName '0.7.0'
     }
 
     signingConfigs {
