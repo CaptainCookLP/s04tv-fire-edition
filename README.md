@@ -1,5 +1,7 @@
 # S04TV Fire Edition
 
+**Version 0.3.0 — TV-Mauszeiger und GitHub-Updates**
+
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
 
@@ -8,7 +10,20 @@ Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
 - **Menü**: Einstellungen
 - **Zurück zweimal binnen 2 Sekunden**: App beenden
 - **Zurück im Video-Vollbild**: Vollbild verlassen
-- Website im Vollbild, Navigation über die Fire-TV-Fernbedienung (abhängig von der Website)
+- **Mauszeiger standardmäßig aktiviert**: Steuerkreuz bewegt den sichtbaren
+  Mauszeiger (auch bei Cookie-Bannern und im Videovollbild).
+- **OK**: Mausklick an der Cursorposition (synthetischer Android-Touch,
+  auch für im WebView eingebettete Frames).
+- **Menü → Mauszeiger ausschalten/einschalten**: zwischen Mausmodus und
+  normaler Webseiten-D-Pad-Navigation wechseln.
+- **Menü → Mausgeschwindigkeit**: Langsam / Normal / Schnell.
+- **Menü → Mauszeiger zentrieren**: Cursor in Bildschirmmitte versetzen.
+- **Menü → Auf Updates prüfen**: prüft öffentliche GitHub Releases.
+- **Automatische Prüfung** beim Start höchstens einmal pro 24 Stunden.
+- **Update auf Bestätigung herunterladen**: SHA-256-Prüfung und Systeminstallation.
+- **Menü → Heruntergeladenes Update installieren**: geprüften Download erneut öffnen.
+- Eigenes blaues **S04TV-Icon** und TV-Banner mit Wortmarke (kein Vereinswappen).
+- Website im Vollbild, Navigation über die Fire-TV-Fernbedienung.
 
 ## Anmeldung
 
@@ -50,6 +65,12 @@ installiert Gradle 8.10.2 automatisch.
 
 ## Wichtige Einschränkungen
 
+Der S04TV-Webplayer und der Mauszeiger wurden nicht auf einem realen Fire TV getestet.
+Der Mausmodus sendet Touch-Events an das WebView bzw. die Vollbild-Player-Ansicht;
+falls einzelne Cookie-Dialoge oder fremde Player-Overlays Touch-Eingaben
+ablehnen, ist ein zusätzlicher Fix erforderlich.
+Der Cursor wird nicht in Android-Systemdialogen angezeigt; diese werden
+weiter mit dem normalen Steuerkreuz bedient.
 Der S04TV-Webplayer wurde nicht auf einem realen Fire TV getestet.
 Videowiedergabe kann wegen WebView-, HLS-, EME- oder DRM-Unterstützung
 fehlschlagen. Die App umgeht keinen Kopierschutz und bringt keine
@@ -63,3 +84,63 @@ Android-Backups sind deaktiviert.
 ## Lizenz
 
 Siehe [LICENSE](LICENSE).
+
+## GitHub Releases als Updatequelle
+
+Die App prüft ausschließlich den neuesten öffentlichen GitHub Release von
+\`CaptainCookLP/s04tv-fire-edition\` über die GitHub-API. Erwarteter Asset-Name:
+\`s04tv-fire-edition.apk\`; Release-Tag \`vMAJOR.MINOR.PATCH\`.
+Nach der Bestätigung lädt sie die APK über HTTPS herunter, prüft den SHA-256
+Digest des offiziellen GitHub-Release-Assets und öffnet den Android-Installer.
+Es erfolgt keine stille Installation und kein DRM-Eingriff. Für Fire OS muss
+gegebenenfalls unter den Geräteeinstellungen das Installieren von Apps aus
+dieser Quelle erlaubt werden.
+
+### Dauerhafte Release-Signatur einmalig einrichten
+
+**Debug-APKs aus GitHub Actions können nicht zuverlässig über neue Versionen
+aktualisiert werden**, weil GitHub Runner temporäre Debug-Signaturen erzeugen.
+Ein dauerhaft verwendeter privater Release-Keystore ist für die
+In-App-Updates erforderlich. Bei Umstellung von einer Debug-APK auf die
+erste Release-APK muss die Debug-Installation ggf. einmalig deinstalliert
+werden. Dabei gehen lokal gespeicherte Cookies und Anmeldedaten verloren.
+
+Erzeuge einen **privaten** Android-Keystore und bewahre ihn offline auf:
+
+\`\`\`bash
+keytool -genkeypair -v -keystore s04tv-release.jks -alias s04tv -keyalg RSA -keysize 3072 -validity 10000
+\`\`\`
+
+Unter **Settings → Secrets and variables → Actions → Repository secrets**
+sind folgende vier Werte einzutragen:
+
+| Secret | Wert |
+| --- | --- |
+| \`S04TV_KEYSTORE_BASE64\` | Vollständige JKS-Datei als Base64 ohne Zeilenumbrüche |
+| \`S04TV_KEYSTORE_PASSWORD\` | Passwort der JKS-Datei |
+| \`S04TV_KEY_ALIAS\` | Alias des Schlüssels (\`s04tv\`) |
+| \`S04TV_KEY_PASSWORD\` | Passwort des Schlüssels |
+
+Für Base64 etwa unter PowerShell:
+
+\`\`\`powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path ".\\s04tv-release.jks")))
+\`\`\`
+
+**Keystore und Passwörter niemals im Repository speichern.**
+Falls der Keystore verloren geht, können installierte Versionen nicht mehr
+mit derselben Signatur aktualisiert werden.
+
+Der Workflow **Build Fire TV APK** erzeugt auf jedem Push nach \`main\`
+ein Debug-APK als Actions-Artifact. Wenn die vier Secrets gesetzt sind,
+baut er zusätzlich ein signiertes APK und veröffentlicht es automatisch
+als **GitHub Release** mit Tag \`v<versionName>\` und Asset
+\`s04tv-fire-edition.apk\`. Ein existierendes Release wird nicht
+überschrieben; für das nächste Release müssen \`versionCode\` und
+\`versionName\` in \`app/build.gradle\` erhöht werden.
+
+Nach Einrichtung der Secrets kann der Workflow auf \`main\` manuell
+über **Actions → Build Fire TV APK → Run workflow** erneut gestartet werden.
+Der Workflow benötigt für Releases \`contents: write\` für den
+\`GITHUB_TOKEN\`. Falls eine Repository-Richtlinie Schreibzugriffe
+für GitHub Actions deaktiviert, muss diese Einstellung angepasst werden.

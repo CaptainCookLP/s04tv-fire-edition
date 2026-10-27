@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+def signingVars = ['S04TV_KEYSTORE_FILE', 'S04TV_KEYSTORE_PASSWORD',
+                   'S04TV_KEY_ALIAS', 'S04TV_KEY_PASSWORD']
+def signingReady = signingVars.every { System.getenv(it) != null && !System.getenv(it).isEmpty() }
+
 android {
     namespace 'de.s04tv.fireedition'
     compileSdk 35
@@ -10,12 +14,36 @@ android {
         applicationId 'de.s04tv.fireedition'
         minSdk 23
         targetSdk 32
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 3
+        versionName '0.3.0'
+    }
+
+    signingConfigs {
+        if (signingReady) {
+            release {
+                storeFile file(System.getenv('S04TV_KEYSTORE_FILE'))
+                storePassword System.getenv('S04TV_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('S04TV_KEY_ALIAS')
+                keyPassword System.getenv('S04TV_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (signingReady) {
+                signingConfig signingConfigs.release
+            }
+        }
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
 }

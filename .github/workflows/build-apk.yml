@@ -2,12 +2,12 @@ name: Build Fire TV APK
 
 on:
   push:
-    branches: [main, "feat/**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -27,21 +27,71 @@ jobs:
       - name: Install Android SDK packages
         shell: bash
         run: |
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDK_ROOT="$ANDROID_HOME"
+          if [ -z "$SDK_ROOT" ]; then SDK_ROOT="$ANDROID_SDK_ROOT"; fi
+          if [ -z "$SDK_ROOT" ]; then SDK_ROOT="/usr/local/lib/android/sdk"; fi
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           "$SDKMANAGER" --version
-          # SDK licenses may already be accepted on hosted runners.
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-      - name: Build debug APK
+      - name: Build debug APK package
         run: gradle --no-daemon assembleDebug
-      - name: APK checksum
-        run: sha256sum app/build/outputs/apk/debug/app-debug.apk
-      - name: Upload APK
+      - name: Upload debug APK package
         uses: actions/upload-artifact@v4
         with:
           name: s04tv-fire-edition-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+      - name: Check release signing secrets
+        id: signing
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          KEYSTORE_B64: ${{ secrets.S04TV_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.S04TV_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.S04TV_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.S04TV_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -n "$KEYSTORE_B64" && -n "$KEYSTORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing secrets. Debug APK available; signed GitHub Release skipped."
+          fi
+      - name: Restore private signing keystore
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.S04TV_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/s04tv-release.jks"
+          chmod 600 "$RUNNER_TEMP/s04tv-release.jks"
+          echo "S04TV_KEYSTORE_FILE=$RUNNER_TEMP/s04tv-release.jks" >> "$GITHUB_ENV"
+      - name: Build signed release APK
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          S04TV_KEYSTORE_PASSWORD: ${{ secrets.S04TV_KEYSTORE_PASSWORD }}
+          S04TV_KEY_ALIAS: ${{ secrets.S04TV_KEY_ALIAS }}
+          S04TV_KEY_PASSWORD: ${{ secrets.S04TV_KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease
+      - name: Publish versioned GitHub Release
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="$(sed -n -E "s/^[[:space:]]*versionName '([^']+)'.*/\1/p" app/build.gradle | head -n 1)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid version"; exit 1; }
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists; not overwriting."
+            exit 0
+          fi
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          gh release create "$TAG" "$APK#s04tv-fire-edition.apk" \
+            --target "$GITHUB_SHA" \
+            --title "S04TV Fire Edition $TAG" \
+            --notes "Signierte Fire-TV-APK mit GitHub-Updateprüfung. Die Installation erfordert die Bestätigung im Android-Installer."
