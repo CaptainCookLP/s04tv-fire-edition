@@ -126,14 +126,20 @@ final class UpdateManager {
                     throw new IllegalStateException("Release hat keine prüfbare SHA-256-Signatur");
                 }
                 String sha256 = digest.substring("sha256:".length());
+                boolean cached = sha256.equals(prefs.getString("update_expected_sha256", "")) &&
+                        tag.equals(prefs.getString("update_download_version", "")) &&
+                        updateFile() != null && updateFile().isFile();
                 activity.runOnUiThread(() -> {
                     if (activity.isFinishing() || activity.isDestroyed()) return;
                     new AlertDialog.Builder(activity)
                             .setTitle("Update " + tag + " verfügbar")
-                            .setMessage("Installiert: v" + installed + "\nNeu: " + tag
-                                    + "\n\nAPK von GitHub herunterladen? Die Installation muss anschließend von dir bestätigt werden.")
-                            .setPositiveButton("Herunterladen", (dialog, which) ->
-                                    downloadUpdate(url, sha256))
+                            .setMessage("Installiert: v" + installed + "\nNeu: " + tag +
+                                    (cached ? "\n\nDas Update ist bereits heruntergeladen und wird vor der Installation geprüft."
+                                            : "\n\nJetzt von GitHub herunterladen und anschließend installieren?"))
+                            .setPositiveButton(cached ? "Installieren" : "Herunterladen & installieren", (dialog, which) -> {
+                                if (cached) verifyFileAndInstall();
+                                else downloadUpdate(url, sha256, tag);
+                            })
                             .setNegativeButton("Später", null)
                             .show();
                 });
@@ -162,7 +168,7 @@ final class UpdateManager {
         return dir == null ? null : new File(dir, DOWNLOAD_NAME);
     }
 
-    private void downloadUpdate(String url, String sha256) {
+    private void downloadUpdate(String url, String sha256, String tag) {
         try {
             if (downloads == null) throw new IllegalStateException("DownloadManager nicht verfügbar");
             File file = updateFile();
@@ -177,7 +183,8 @@ final class UpdateManager {
                     Environment.DIRECTORY_DOWNLOADS, DOWNLOAD_NAME);
             long id = downloads.enqueue(request);
             prefs.edit().putLong("update_download_id", id)
-                    .putString("update_expected_sha256", sha256).apply();
+                    .putString("update_expected_sha256", sha256)
+                    .putString("update_download_version", tag).apply();
             toast("Update wird heruntergeladen");
         } catch (Exception error) {
             notifyDialog("Download fehlgeschlagen", error.getMessage());
@@ -198,10 +205,6 @@ final class UpdateManager {
             notifyDialog("Update fehlgeschlagen", "Der APK-Download war nicht erfolgreich.");
             return;
         }
-        verifyFileAndInstall();
-    }
-
-    void installDownloadedUpdate() {
         verifyFileAndInstall();
     }
 

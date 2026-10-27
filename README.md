@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.3.1 — Salesforce-Login-Autofill und GitHub-Updates**
+**Version 0.4.0 — TV-Login-Design, Anmeldehinweis & App-Assets**
 
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
@@ -18,10 +18,8 @@ Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
   normaler Webseiten-D-Pad-Navigation wechseln.
 - **Menü → Mausgeschwindigkeit**: Langsam / Normal / Schnell.
 - **Menü → Mauszeiger zentrieren**: Cursor in Bildschirmmitte versetzen.
-- **Menü → Auf Updates prüfen**: prüft öffentliche GitHub Releases.
+- **Menü → Updates prüfen / installieren**: Ein gemeinsamer Ablauf für Versionsprüfung, Download und Installation. Bereits heruntergeladene Updates werden erneut überprüft und direkt zur Installation angeboten.
 - **Automatische Prüfung** beim Start höchstens einmal pro 24 Stunden.
-- **Update auf Bestätigung herunterladen**: SHA-256-Prüfung und Systeminstallation.
-- **Menü → Heruntergeladenes Update installieren**: geprüften Download erneut öffnen.
 - Eigenes blaues **S04TV-Icon** und TV-Banner mit Wortmarke (kein Vereinswappen).
 - Website im Vollbild, Navigation über die Fire-TV-Fernbedienung.
 
@@ -165,3 +163,12 @@ Ab v0.3.1 wird das signierte Release-APK tatsächlich als
 Dies entspricht dem Dateinamen, den der In-App-Updater erwartet.
 Die ältere v0.3.0-Veröffentlichung hatte dagegen den tatsächlichen
 Dateinamen `app-release.apk`.
+
+
+## TV-optimierte Bedienung (v0.4.0)
+
+- Nur auf der echten Salesforce-Anmeldeseite `https://account.schalke04.de/s/login/` (und den alternativen Loginpfaden) wird **Präsentations-HTML und CSS** ergänzt: S04TV+-Kopfbereich, große Formularfelder, kontrastreiche Fokusränder und fernbedienungsfreundliche Schaltflächen. Originalformulare, Login-API, URLs, Cookies und Weiterleitungen werden nicht ersetzt.
+- Auf `tv.schalke04.de` prüft die App nach dem Seitenladen, ob ein **Login-Link** und kein **Mein Abo/Logout** vorhanden ist. Dann erscheint **einmal pro App-Start** ein nativer Hinweis mit `Jetzt anmelden` und `Später`. Die Anmelde-Schaltfläche nutzt den Original-Link der Website.
+- Im Mausmodus: **Steuerkreuz** = Cursor, **OK** = Klick; auf kompatiblen Fernbedienungen **Seite hoch/runter bzw. Kanal hoch/runter** = scrollen. Die Website außerhalb von `account.schalke04.de` erhält keine neuen CSS-Stile.
+- App-Icon und Android-TV-Leanback-Banner basieren auf den vom Nutzer bereitgestellten **S04TVplus_TV_Assets** und übernehmen deren originale Logo-Vektorpfade.
+- Der Updatepunkt im Menü vereint **Prüfen, Herunterladen und Installieren**. Die APK muss weiterhin vom Android-Paketinstaller bestätigt werden.

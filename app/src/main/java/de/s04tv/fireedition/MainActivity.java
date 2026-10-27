@@ -9,6 +9,8 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Base64;
 import android.view.Gravity;
@@ -58,6 +60,9 @@ public final class MainActivity extends Activity {
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
     private long lastBackPress;
+    private final Handler loginPromptHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingLoginCheck;
+    private boolean loginPromptShown;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -91,17 +96,21 @@ public final class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                cancelLoginCheck();
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest req) {
                 return !("https".equalsIgnoreCase(req.getUrl().getScheme()));
             }
             @Override public void onPageFinished(WebView view, String url) {
                 applyViewport();
                 if (isLoginPage(url)) {
-                    // Salesforce renders login inputs after WebView.onPageFinished.
-                    // LoginAutoFill watches for dynamic fields on the original HTTPS origin.
+                    // Presentation is scoped only to account.schalke04.de.
+                    LoginTvOverlay.apply(view);
                     fillLogin();
                 } else {
                     LoginAutoFill.stop(view);
+                    if (isTvPage(url)) scheduleLoginCheck();
                 }
                 CookieManager.getInstance().flush();
             }
@@ -143,6 +152,53 @@ public final class MainActivity extends Activity {
         } catch (Exception ignored) { return false; }
     }
 
+    private boolean isTvPage(String url) {
+        try {
+            android.net.Uri uri = android.net.Uri.parse(url);
+            return "https".equalsIgnoreCase(uri.getScheme()) &&
+                    "tv.schalke04.de".equalsIgnoreCase(uri.getHost());
+        } catch (Exception ignored) { return false; }
+    }
+
+    private void cancelLoginCheck() {
+        if (pendingLoginCheck != null) loginPromptHandler.removeCallbacks(pendingLoginCheck);
+        pendingLoginCheck = null;
+    }
+
+    private void scheduleLoginCheck() {
+        if (loginPromptShown) return;
+        cancelLoginCheck();
+        pendingLoginCheck = () -> {
+            pendingLoginCheck = null;
+            if (loginPromptShown || fullscreenView != null || !isTvPage(webView.getUrl())) return;
+            // Read the existing link states. Do not alter S04TV page DOM.
+            String js = "(function(){" +
+                    "if(location.protocol!=='https:'||location.hostname!=='tv.schalke04.de')return 'unknown';" +
+                    "var links=Array.prototype.slice.call(document.querySelectorAll('a[href]'));" +
+                    "var hasAbo=links.some(function(a){return /\\/subscription(?:[/?#]|$)/.test(a.href)" +
+                    "||/mein abo/i.test((a.textContent||'').trim());});" +
+                    "var hasLogout=!!document.querySelector('button[aria-label=\\\"Logout\\\"]');" +
+                    "var hasLogin=links.some(function(a){return /(^|\\s)login(\\s|$)/i.test((a.textContent||'').trim())" +
+                    "||/account\\.schalke04\\.de\\/s\\/login/.test(a.href);});" +
+                    "return hasLogin&&!hasAbo&&!hasLogout?'logged_out':'unknown';})();";
+            webView.evaluateJavascript(js, result -> {
+                if (!"\"logged_out\"".equals(result) || loginPromptShown ||
+                        isFinishing() || isDestroyed() || !isTvPage(webView.getUrl())) return;
+                loginPromptShown = true;
+                new AlertDialog.Builder(this)
+                        .setTitle("Bei S04TV+ anmelden")
+                        .setMessage("Du bist derzeit nicht angemeldet. Melde dich mit deinem Schalke-Konto an, um die Inhalte deines Abos anzusehen.")
+                        .setPositiveButton("Jetzt anmelden", (d, which) -> {
+                            // Click the site's own login link. No custom auth flow.
+                            webView.evaluateJavascript("(function(){var a=Array.prototype.slice.call(document.querySelectorAll('a[href]')).find(function(a){return /(^|\\s)login(\\s|$)/i.test((a.textContent||'').trim())||/account\\.schalke04\\.de\\/s\\/login/.test(a.href);});if(a)a.click();})();", null);
+                        })
+                        .setNegativeButton("Später", null)
+                        .show();
+            });
+        };
+        loginPromptHandler.postDelayed(pendingLoginCheck, 2000);
+    }
+
     private void applyViewport() {
         int index = preferences.getInt("viewport", 0);
         if (index < 0 || index >= SIZE_WIDTHS.length) index = 0;
@@ -177,8 +233,7 @@ public final class MainActivity extends Activity {
                         "Zugangsdaten",
                         "Website neu laden",
                         "Anmeldesitzung löschen",
-                        "Auf Updates prüfen",
-                        "Heruntergeladenes Update installieren"
+                        "Updates prüfen / installieren"
                 }, (d, which) -> {
                     switch (which) {
                         case 0: chooseViewport(); break;
@@ -189,7 +244,6 @@ public final class MainActivity extends Activity {
                         case 5: webView.reload(); break;
                         case 6: clearSession(); break;
                         case 7: updateManager.checkForUpdates(true); break;
-                        case 8: updateManager.installDownloadedUpdate(); break;
                         default: break;
                     }
                 })
@@ -227,6 +281,15 @@ public final class MainActivity extends Activity {
         if (key == KeyEvent.KEYCODE_MENU) {
             if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0)
                 showSettings();
+            return true;
+        }
+        if (mouseEnabled && cursor != null && fullscreenView == null &&
+                (key == KeyEvent.KEYCODE_PAGE_DOWN || key == KeyEvent.KEYCODE_CHANNEL_DOWN ||
+                 key == KeyEvent.KEYCODE_PAGE_UP || key == KeyEvent.KEYCODE_CHANNEL_UP)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                int sign = (key == KeyEvent.KEYCODE_PAGE_DOWN || key == KeyEvent.KEYCODE_CHANNEL_DOWN) ? 1 : -1;
+                webView.scrollBy(0, Math.round(sign * webView.getHeight() * .65f));
+            }
             return true;
         }
         if (mouseEnabled && cursor != null) {
@@ -294,7 +357,7 @@ public final class MainActivity extends Activity {
             setClickable(false);
             setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             fill.setStyle(Paint.Style.FILL);
-            fill.setColor(Color.WHITE);
+            fill.setColor(Color.rgb(0, 177, 235));
             border.setStyle(Paint.Style.STROKE);
             border.setStrokeWidth(2.7f * density);
             border.setStrokeJoin(Paint.Join.ROUND);
@@ -498,6 +561,7 @@ public final class MainActivity extends Activity {
         if (updateManager != null) updateManager.onResume();
     }
     @Override protected void onDestroy() {
+        cancelLoginCheck();
         LoginAutoFill.stop(webView);
         if (updateManager != null) updateManager.destroy();
         hideVideo();

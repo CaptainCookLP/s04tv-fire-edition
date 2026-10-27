@@ -1,24 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="320dp" android:height="180dp"
-    android:viewportWidth="320" android:viewportHeight="180">
-    <path android:fillColor="#004B9B" android:pathData="M0,0 L320,0 L320,180 L0,180 Z"/>
-    <path android:fillColor="#0C65B2" android:pathData="M0,147 L320,147 L320,180 L0,180 Z"/>
-    <path android:fillColor="#156DB8" android:pathData="M24,38 L121,38 Q134,38 134,51 L134,132 Q134,145 121,145 L24,145 Q11,145 11,132 L11,51 Q11,38 24,38 Z"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M51,60 L51,121 L108,90 Z"/>
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="9"
-        android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M182,62 C170,55 151,59 151,72 C151,86 184,80 184,97 C184,111 164,116 150,105"/>
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="9"
-        android:strokeLineCap="round" android:fillColor="#00000000"
-        android:pathData="M210,60 C195,60 193,70 193,85 C193,100 197,111 211,111 C225,111 229,100 229,85 C229,70 225,60 210,60 Z"/>
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="9"
-        android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M268,60 L240,96 L281,96 M267,60 L267,112"/>
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="7"
-        android:strokeLineCap="square" android:strokeLineJoin="miter"
-        android:fillColor="#00000000"
-        android:pathData="M184,129 L221,129 M202,129 L202,152 M239,129 L253,153 L268,129"/>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="320dp" android:height="180dp" android:viewportWidth="1280" android:viewportHeight="720">
+<path android:fillColor="#03162E" android:pathData="M0,0 L1280,0 L1280,720 L0,720 Z"/>
+<path android:fillColor="#082A50" android:pathData="M0,260 L1280,0 L1280,720 L0,720 Z"/>
+<path android:fillColor="#075078" android:pathData="M720,720 L1280,170 L1280,720 Z"/>
+<path android:fillColor="#00B1EB" android:fillAlpha="0.055" android:pathData="M880,0 L1140,0 L960,720 L710,720 Z"/>
+<path android:fillColor="#FFFFFF" android:fillAlpha="0.04" android:pathData="M1195,0 L1280,0 L1090,720 L1000,720 Z"/>
+<path android:strokeColor="#00B1EB" android:strokeWidth="7" android:strokeLineCap="round" android:pathData="M115,574 L375,574"/>
+<path android:strokeColor="#FFFFFF" android:strokeAlpha="0.42" android:strokeWidth="7" android:strokeLineCap="round" android:pathData="M396,574 L492,574"/>
+<group android:translateX="115" android:translateY="214" android:scaleX="9.1304" android:scaleY="9.1304"><path android:fillColor="#00B1EB" android:pathData="M102.016 34H0V0h114.601l-5.882 28.538A6.84 6.84 0 0 1 102.016 34"/><path android:fillColor="#FFFFFF" android:pathData="M52.984 4.085V30.43H80.56a4.364 4.364 0 0 0 4.25-3.368L89.56 4.09H52.984z"/><path android:fillColor="#00B1EB" android:pathData="M68.75 11.94h-4.112v14.054h-3.496V11.939h-4.134V8.764h11.741zm14.714-3.176-4.429 17.23H74.16l-4.48-17.23h3.617l3.297 13.907h.049l3.223-13.907z"/><path android:fillColor="#FFFFFF" android:pathData="M91.266 15.023h5.5V9.52h3.955v5.503h5.503v3.955h-5.503v5.503h-3.955v-5.503h-5.5zm-74.982 8.05c1.286 0 2.178-.645 2.524-1.46v-.493c0-1.238-.446-1.857-2.152-2.277l-2.351-.571c-2.896-.693-4.256-2.351-4.256-5.026 0-3.043 2.524-4.974 5.892-4.974 4.108 0 6.065 2.45 6.164 5.272l-3.342.571c-.125-1.632-.94-2.822-2.797-2.822-1.36 0-2.402.718-2.402 1.905 0 .965.446 1.633 1.905 1.979l2.252.52c3.268.744 4.602 2.45 4.602 4.926v2.229c-.94 1.757-2.896 3.242-6.04 3.242-3.986 0-6.51-2.229-6.311-5.84h3.416c-.1 1.559.792 2.822 2.896 2.822zm7.2-2.303v-8.91c.94-2.177 2.848-3.588 5.94-3.588 3.563 0 5.866 2.13 5.866 5.32v8.888c-.965 2.229-2.896 3.614-5.94 3.614-3.563 0-5.866-2.13-5.866-5.32zm5.892 2.156c1.264 0 2.078-.667 2.476-1.71V13.94c0-1.485-.991-2.498-2.425-2.498-1.263 0-2.078.644-2.498 1.709V20.4c0 1.486.991 2.525 2.45 2.525zm17.114-3.814h2.402v3.02H46.49v3.715h-3.464v-3.714h-6.51v-2.848l5.99-10.767h4.035l-6.459 10.693H43.3v-2.675l3.194-.917v3.49z"/></group>
 </vector>
