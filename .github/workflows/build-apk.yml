@@ -91,7 +91,8 @@ jobs:
           fi
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          gh release create "$TAG" "$APK#s04tv-fire-edition.apk" \
+          cp "$APK" "s04tv-fire-edition.apk"
+          gh release create "$TAG" "s04tv-fire-edition.apk" \
             --target "$GITHUB_SHA" \
             --title "S04TV Fire Edition $TAG" \
             --notes "Signierte Fire-TV-APK mit GitHub-Updateprüfung. Die Installation erfordert die Bestätigung im Android-Installer."

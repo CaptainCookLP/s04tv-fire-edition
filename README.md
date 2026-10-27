@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.3.0 — TV-Mauszeiger und GitHub-Updates**
+**Version 0.3.1 — Salesforce-Login-Autofill und GitHub-Updates**
 
 Inoffizielle Fire-TV-WebView-App für https://tv.schalke04.de/.
 Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
@@ -30,12 +30,25 @@ Keine Verbindung zum FC Schalke 04. Keine Weiterverbreitung der Videos.
 Die App erhält Cookies und WebStorage für bestehende S04-Anmeldesitzungen.
 Unter **Menü → Zugangsdaten** können E-Mail und Passwort optional mit
 Android Keystore (AES-GCM) lokal verschlüsselt abgelegt werden.
-Die Daten werden nur beim Laden von HTTPS-Seiten des Hosts
-\`account.schalke04.de\` in leere Loginfelder gesetzt. Die App sendet das
-Formular **niemals** selbst ab. Die Eingabefelder werden bei Nutzung
-durch JavaScript im Kontext dieser Originalwebsite befüllt.
-Login-Feldnamen/Seitenstruktur können sich ändern; dann funktioniert
-das Ausfüllen eventuell nicht mehr. Sitzungen können ablaufen.
+Die Daten werden ausschließlich auf HTTPS-Seiten von
+`account.schalke04.de` mit Login-Pfad (`/s/login/`, `/login/` oder
+Startseite) in **sichtbare, leere** Loginfelder eingetragen.
+Die Salesforce-Anmeldeseite kann ihre Formularfelder dynamisch nachladen:
+Die App überwacht das Login-Formular deshalb bis zu 30 Sekunden lang und
+erkennt auch Eingabefelder mit Beschriftungen **E-Mail-Adresse** und
+**Passwort** sowie offene Shadow-DOM-Felder. Bereits von Hand ausgefüllte
+Felder werden nicht überschrieben. Die Anmeldung wird **niemals**
+automatisch abgeschickt. Sitzungen können weiterhin ablaufen.
+
+Die langen Parameter `startURL` und `source` der Salesforce-
+Anmeldeweiterleitung werden von der App nicht gespeichert oder
+protokolliert. Die Website führt die Weiterleitung selbst aus.
+
+**Erste Anmeldung:** Unter **Menü → Zugangsdaten** einmalig E-Mail und
+Passwort speichern. Danach werden beide Felder beim nächsten Besuch der
+S04-Account-Anmeldeseite automatisch ausgefüllt. Ohne vorher gespeicherte
+Zugangsdaten gibt es kein Autofill. Feldnamen oder Seitenskripte können sich
+ändern; die Bedienung muss auf einem echten Fire TV geprüft werden.
 
 ## Darstellungsgröße / Auflösung
 
@@ -144,3 +157,11 @@ Nach Einrichtung der Secrets kann der Workflow auf \`main\` manuell
 Der Workflow benötigt für Releases \`contents: write\` für den
 \`GITHUB_TOKEN\`. Falls eine Repository-Richtlinie Schreibzugriffe
 für GitHub Actions deaktiviert, muss diese Einstellung angepasst werden.
+
+### Release-Asset-Name
+
+Ab v0.3.1 wird das signierte Release-APK tatsächlich als
+`s04tv-fire-edition.apk` hochgeladen (nicht nur mit diesem Anzeigelabel).
+Dies entspricht dem Dateinamen, den der In-App-Updater erwartet.
+Die ältere v0.3.0-Veröffentlichung hatte dagegen den tatsächlichen
+Dateinamen `app-release.apk`.

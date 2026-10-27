@@ -27,7 +27,6 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.Toast;
 
-import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
@@ -59,7 +58,6 @@ public final class MainActivity extends Activity {
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
     private long lastBackPress;
-    private String lastLoginFillUrl = "";
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -98,11 +96,12 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageFinished(WebView view, String url) {
                 applyViewport();
-                if (isLoginPage(url) && !url.equals(lastLoginFillUrl)) {
-                    lastLoginFillUrl = url;
+                if (isLoginPage(url)) {
+                    // Salesforce renders login inputs after WebView.onPageFinished.
+                    // LoginAutoFill watches for dynamic fields on the original HTTPS origin.
                     fillLogin();
-                } else if (!isLoginPage(url)) {
-                    lastLoginFillUrl = "";
+                } else {
+                    LoginAutoFill.stop(view);
                 }
                 CookieManager.getInstance().flush();
             }
@@ -133,8 +132,14 @@ public final class MainActivity extends Activity {
     private boolean isLoginPage(String url) {
         try {
             android.net.Uri uri = android.net.Uri.parse(url);
-            return "https".equalsIgnoreCase(uri.getScheme()) &&
-                    LOGIN_HOST.equalsIgnoreCase(uri.getHost());
+            if (!"https".equalsIgnoreCase(uri.getScheme()) ||
+                    !LOGIN_HOST.equalsIgnoreCase(uri.getHost())) return false;
+            String path = uri.getPath();
+            return path != null && (path.equals("/") ||
+                    path.equalsIgnoreCase("/login") ||
+                    path.equalsIgnoreCase("/login/") ||
+                    path.equalsIgnoreCase("/s/login") ||
+                    path.equalsIgnoreCase("/s/login/"));
         } catch (Exception ignored) { return false; }
     }
 
@@ -157,18 +162,8 @@ public final class MainActivity extends Activity {
             email = decrypt(preferences.getString("email", ""));
             password = decrypt(preferences.getString("password", ""));
         } catch (Exception ignored) { return; }
-        if (email.isEmpty() || password.isEmpty()) return;
-        // No submit. Only inject on the verified S04 account origin.
-        final String js = "(function(){" +
-                "if(location.protocol!=='https:'||location.hostname!==" + JSONObject.quote(LOGIN_HOST) + ")return;" +
-                "var e=document.querySelector('input[type=email],input[autocomplete=username],input[name=email]');" +
-                "var p=document.querySelector('input[type=password]');" +
-                "function put(el,v){if(!el||el.value)return;" +
-                "var d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');" +
-                "d.set.call(el,v);el.dispatchEvent(new Event('input',{bubbles:true}));" +
-                "el.dispatchEvent(new Event('change',{bubbles:true}));}" +
-                "put(e," + JSONObject.quote(email) + ");put(p," + JSONObject.quote(password) + ");})();";
-        webView.evaluateJavascript(js, null);
+        // Only the HTTPS S04 login origin; no automatic form submission.
+        LoginAutoFill.fill(webView, email, password);
     }
 
     private void showSettings() {
@@ -393,7 +388,7 @@ public final class MainActivity extends Activity {
                             preferences.edit().putString("email", encrypt(user))
                                     .putString("password", encrypt(pass)).apply();
                         }
-                        lastLoginFillUrl = "";
+                        if (isLoginPage(webView.getUrl())) fillLogin();
                         Toast.makeText(this, "Zugangsdaten gespeichert", Toast.LENGTH_SHORT).show();
                     } catch (Exception ex) {
                         Toast.makeText(this, "Speichern fehlgeschlagen", Toast.LENGTH_LONG).show();
@@ -401,7 +396,7 @@ public final class MainActivity extends Activity {
                 })
                 .setNeutralButton("Zugangsdaten löschen", (d, w) -> {
                     preferences.edit().remove("email").remove("password").apply();
-                    lastLoginFillUrl = "";
+                    LoginAutoFill.stop(webView);
                     Toast.makeText(this, "Zugangsdaten gelöscht", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Abbrechen", null).show();
@@ -416,7 +411,7 @@ public final class MainActivity extends Activity {
                         webView.clearCache(true);
                         webView.clearHistory();
                         android.webkit.WebStorage.getInstance().deleteAllData();
-                        lastLoginFillUrl = "";
+                        LoginAutoFill.stop(webView);
                         webView.loadUrl(HOME);
                     });
                 }).setNegativeButton("Abbrechen", null).show();
@@ -503,6 +498,7 @@ public final class MainActivity extends Activity {
         if (updateManager != null) updateManager.onResume();
     }
     @Override protected void onDestroy() {
+        LoginAutoFill.stop(webView);
         if (updateManager != null) updateManager.destroy();
         hideVideo();
         if (webView != null) {
