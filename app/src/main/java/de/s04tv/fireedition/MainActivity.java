@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     private boolean loginPromptShown;
     private String visitedUrl = HOME;
     private TvPlayerControls playerControls;
+    private RemoteDebugOverlay remoteDebug;
     private PersistentAssetCache assetCache;
     private StartupSplash startupSplash;
     private final Handler startupHandler = new Handler(Looper.getMainLooper());
@@ -90,6 +91,7 @@ public final class MainActivity extends Activity {
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
         root.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        remoteDebug = new RemoteDebugOverlay(this, root, preferences);
         playerControls = new TvPlayerControls(this, root, this::handlePlayerAction);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -122,6 +124,7 @@ public final class MainActivity extends Activity {
             }
             @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
                 super.doUpdateVisitedHistory(view, url, isReload);
+                if (!url.equals(visitedUrl)) remoteDebug.recordState("Navigation: " + pageKind(url));
                 visitedUrl = url;
                 if (isTvCatalog(url)) lastCatalogUrl = url;
                 if (isTvPage(url)) {
@@ -177,6 +180,8 @@ public final class MainActivity extends Activity {
                 view.setFocusable(true);
                 view.requestFocus();
                 if (playerControls.isShowing()) playerControls.hide();
+                remoteDebug.recordState("Android-Vollbild geöffnet");
+                remoteDebug.bringToFront();
             }
             @Override public void onHideCustomView() { hideVideo(); }
         });
@@ -186,6 +191,7 @@ public final class MainActivity extends Activity {
         root.addView(startupSplash, new FrameLayout.LayoutParams(-1, -1));
         startupSplash.bringToFront();
         startupSplash.requestFocus();
+        remoteDebug.bringToFront();
 
         new Thread(() -> {
             int[] count = assetCache.prepare();
@@ -213,6 +219,7 @@ public final class MainActivity extends Activity {
                     root.addView(startupSplash, new FrameLayout.LayoutParams(-1, -1));
                     startupSplash.bringToFront();
                     startupSplash.requestFocus();
+                    remoteDebug.bringToFront();
                 }
                 if (startupSplash != null) startupSplash.updateStatus(
                         available ? "Update erforderlich · Installation folgt" :
@@ -239,7 +246,10 @@ public final class MainActivity extends Activity {
         }, 16000);
         if (Build.VERSION.SDK_INT >= 33) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, () -> {
+                        remoteDebug.recordState("Android-Back-Callback");
+                        handleBack();
+                    });
         }
     }
 
@@ -291,6 +301,13 @@ public final class MainActivity extends Activity {
                     path.equalsIgnoreCase("/s/login") ||
                     path.equalsIgnoreCase("/s/login/"));
         } catch (Exception ignored) { return false; }
+    }
+
+    private String pageKind(String url) {
+        if (isTvVideo(url)) return "Videoseite";
+        if (isTvCatalog(url)) return "Katalog";
+        if (isLoginPage(url)) return "Anmeldung";
+        return "Andere Seite";
     }
 
     private boolean isTvPage(String url) {
@@ -378,7 +395,7 @@ public final class MainActivity extends Activity {
 
     private void showSettings() {
         boolean focusOn = preferences.getBoolean("tv_focus", true);
-        new AlertDialog.Builder(this)
+        AlertDialog settingsDialog = new AlertDialog.Builder(this)
                 .setTitle("S04TV Einstellungen")
                 .setItems(new String[]{
                         "Darstellungsgröße",
@@ -388,6 +405,7 @@ public final class MainActivity extends Activity {
                         "Anmeldesitzung löschen",
                         "Updates prüfen / installieren",
                         "Player-Steuerung / Diagnose",
+                        "Fernbedienung-Debugging",
                         "Gespeicherten Bildercache leeren"
                 }, (d, which) -> {
                     switch (which) {
@@ -407,7 +425,8 @@ public final class MainActivity extends Activity {
                         case 4: clearSession(); break;
                         case 5: updateManager.checkForUpdates(true); break;
                         case 6: showPlayerControls(); break;
-                        case 7:
+                        case 7: showRemoteDebugMenu(); break;
+                        case 8:
                             new Thread(() -> {
                                 assetCache.clear();
                                 runOnUiThread(() -> Toast.makeText(this,
@@ -419,6 +438,38 @@ public final class MainActivity extends Activity {
                 })
                 .setNegativeButton("Schließen", null)
                 .show();
+        remoteDebug.observeDialog(settingsDialog, "Einstellungen");
+    }
+
+    private void showRemoteDebugMenu() {
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Fernbedienung-Debugging")
+                .setMessage("Zeigt beim Test die letzten Tasteneingaben oben im Bild an. " +
+                        "Erfasst werden nur Fernbedienungstasten und App-Aktionen, " +
+                        "keine Passwörter, Inhalte oder URLs. Systemtasten wie Home " +
+                        "werden ggf. von Fire OS abgefangen.")
+                .setItems(new String[]{
+                        remoteDebug.isEnabled() ? "Debug-Anzeige ausschalten" : "Debug-Anzeige einschalten",
+                        "Letzte Ereignisse anzeigen",
+                        "Protokoll in Zwischenablage kopieren",
+                        "Protokoll leeren"
+                }, (d, which) -> {
+                    switch (which) {
+                        case 0:
+                            remoteDebug.setEnabled(!remoteDebug.isEnabled());
+                            Toast.makeText(this, remoteDebug.isEnabled() ?
+                                    "Debug-Anzeige eingeschaltet" : "Debug-Anzeige ausgeschaltet",
+                                    Toast.LENGTH_SHORT).show();
+                            break;
+                        case 1: remoteDebug.showReport(); break;
+                        case 2: remoteDebug.copyReport(); break;
+                        case 3: remoteDebug.clear(); break;
+                        default: break;
+                    }
+                })
+                .setNegativeButton("Schließen", null)
+                .show();
+        remoteDebug.observeDialog(dialog, "Debug-Menü");
     }
 
     private void showPlayerControls() {
@@ -427,9 +478,12 @@ public final class MainActivity extends Activity {
             return;
         }
         playerControls.show();
+        remoteDebug.recordState("Playerleiste geöffnet");
+        remoteDebug.bringToFront();
     }
 
     private void handlePlayerAction(String action) {
+        remoteDebug.recordState("Playerleiste: " + action);
         if ("close".equals(action)) {
             playerControls.hide();
             webView.requestFocus();
@@ -447,7 +501,10 @@ public final class MainActivity extends Activity {
     }
 
     private void playerCommand(String action) {
+        remoteDebug.recordState("3Q-Befehl: " + action);
         ThreeQPlayerController.command(webView, action, result -> {
+            remoteDebug.recordState("3Q-Antwort: " + action +
+                    (result.optBoolean("ok") ? " OK" : " FEHLER"));
             if (isFinishing() || isDestroyed() || !isTvVideo(visitedUrl)) return;
             if (!result.optBoolean("ok")) {
                 String reason = result.optString("reason", "unbekannt");
@@ -480,6 +537,36 @@ public final class MainActivity extends Activity {
      * The embedded 3Q player and native login forms keep their own key handling.
      */
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        String route = remoteKeyRoute(event.getKeyCode());
+        boolean consumed = dispatchS04KeyEvent(event);
+        if (remoteDebug != null) remoteDebug.recordKey(event, route, consumed);
+        return consumed;
+    }
+
+    private String remoteKeyRoute(int key) {
+        if (startupSplash != null) return "Startbildschirm";
+        if (key == KeyEvent.KEYCODE_MENU) return "Einstellungen";
+        if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_ESCAPE ||
+                key == KeyEvent.KEYCODE_BUTTON_B) return "Zurück";
+        if (playerControls != null && playerControls.isShowing()) return "Playerleiste";
+        if (isTvVideo(visitedUrl)) {
+            switch (key) {
+                case KeyEvent.KEYCODE_DPAD_LEFT: return "3Q −10 s";
+                case KeyEvent.KEYCODE_DPAD_RIGHT: return "3Q +10 s";
+                case KeyEvent.KEYCODE_DPAD_UP:
+                case KeyEvent.KEYCODE_DPAD_DOWN: return "Playerleiste öffnen";
+                case KeyEvent.KEYCODE_DPAD_CENTER:
+                case KeyEvent.KEYCODE_ENTER:
+                case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE: return "3Q Play/Pause";
+                default: return "Videoseite";
+            }
+        }
+        if (isTvCatalog(visitedUrl) && preferences.getBoolean("tv_focus", true))
+            return "Katalog-Fokus";
+        return "WebView";
+    }
+
+    private boolean dispatchS04KeyEvent(KeyEvent event) {
         int key = event.getKeyCode();
         if (startupSplash != null) {
             // A mandatory Android dialog must receive D-pad and OK normally.
@@ -674,6 +761,7 @@ public final class MainActivity extends Activity {
         if (fullscreenView == null) return;
         root.removeView(fullscreenView);
         fullscreenView = null;
+        remoteDebug.recordState("Android-Vollbild geschlossen");
         webView.setVisibility(View.VISIBLE);
         if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
         fullscreenCallback = null;

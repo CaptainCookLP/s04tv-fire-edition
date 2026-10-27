@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.7.0 – Cache-first-Start und verpflichtende Updateinstallation**
+**Version 0.7.1 – Fernbedienungs-Debugging und Tastenanzeige**
 
 Inoffizielle Fire-TV-/Android-TV-App für https://tv.schalke04.de/. Kein offizielles Produkt des FC Schalke 04. Anmeldung, Inhalte und Zugriffsrechte werden vollständig von S04TV und 3Q bereitgestellt. Keine Umgehung von DRM, Abonnements oder Ein-Gerät-Regeln.
 
@@ -95,3 +95,22 @@ Der Ladebildschirm deckt die WebView ab, während die Website bereits **unsichtb
 Wenn GitHub wegen fehlender Netzwerkverbindung/Timeout nicht geprüft werden kann, ist die Updatepflicht **nicht nachweisbar**; dann darf die gecachte Website im Offline-/Fehlerfall dennoch starten. Ein später eintreffendes positives Ergebnis sperrt die Website sofort wieder. Bei normalem Start wird jeden App-Start erneut geprüft.
 
 **Cache-Grenzen:** Der private Bildcache überlebt normale App-Neustarts und wird beim Löschen von App-Daten/deinstallieren entfernt. Geschützte Videos, Cookies, DRM und personalisierte Inhalte werden nicht in diesen eigenen Bildcache übertragen. Für JS/CSS und Drittanbieter-Caches gelten die Standard-HTTP-/WebView-Regeln.
+
+
+## v0.7.1 – Fernbedienungs-Debugging (opt-in)
+
+Für einen nachvollziehbaren Fire-TV-Test: **Menü → Einstellungen → Fernbedienung-Debugging → Debug-Anzeige einschalten**. Oben links erscheint ein nicht fokussierbares, halbtransparentes Fenster. Es zeigt **mit Uhrzeit** die letzten fünf Ereignisse: Fernbedienungstaste, DOWN/UP und ggf. Wiederholung, erwarteter Bedienpfad (z. B. 3Q ±10 Sekunden, Katalog-Fokus, Playerleiste) und ob die Activity die Eingabe übernommen oder weitergereicht hat.
+
+Beim Abfilmen oder Aufzeichnen des Fire-TV-Bildschirms sind dadurch Bild und Tasteneingabe zeitlich synchron. Auf der Videoseite bleibt der Hinweis auch bei der nativen HTML-Vollbildansicht im Vordergrund, sofern diese durch die Activity angezeigt wird. Die Anzeige ist **standardmäßig aus**, kann jederzeit im Menü deaktiviert werden und bleibt als Einstellung gespeichert.
+
+Im Debug-Menü können die letzten Ereignisse angezeigt, in die Zwischenablage kopiert oder gelöscht werden. Es werden höchstens **180 Ereignisse im Arbeitsspeicher** gespeichert (bei App-Neustart beginnt eine neue Sitzung). Das Debuggen zeichnet **keine Passwort- oder Texteingaben, URLs, Tokens, Cookies, Websiteinhalte oder Streamdaten** auf. Nur eine feste Liste von Fernbedienungs-/Mediatasten und sichere native Statusmeldungen wird protokolliert. Dialogtasten werden ebenfalls erfasst; bei nativen Dialogen kann das darunterliegende HUD verdeckt sein. Systemseitige Tasten wie Home können von Fire OS abgefangen werden und erreichen die App nicht.
+
+**Bessere Ergänzung zur Videoaufnahme:** Falls ADB zur Verfügung steht, lässt sich das gleiche, zeitgestempelte Protokoll vom Testgerät direkt mitlesen:
+
+```bash
+adb connect <fire-tv-ip>:5555
+adb logcat -c
+adb logcat -v time -s S04TVRemote:I
+```
+
+Debug-Modus zuerst einschalten. Während `logcat` läuft, den Fehler reproduzieren, anschließend die Ausgabe zusammen mit dem Video teilen. Das Protokoll enthält ausschließlich die vorgenannten freigegebenen Ereignisse. Wenn `logcat` auf dem Fire TV nicht verfügbar ist, lässt sich alternativ das Protokoll aus dem Debug-Menü kopieren.
