@@ -60,8 +60,36 @@ final class UpdateManager {
         receiverRegistered = true;
     }
 
+    interface StartupListener {
+        void onStatus(String message);
+        void onFinished();
+    }
+
+    // Always check when starting. Called while the startup splash is covering the WebView.
+    void checkAtStartup(StartupListener listener) {
+        checkForUpdates(false, listener);
+    }
+
     void checkForUpdates(boolean manual) {
-        if (!manual) {
+        checkForUpdates(manual, null);
+    }
+
+    private void startupStatus(StartupListener listener, String message) {
+        if (listener == null) return;
+        activity.runOnUiThread(() -> {
+            if (!activity.isFinishing() && !activity.isDestroyed()) listener.onStatus(message);
+        });
+    }
+
+    private void startupDone(StartupListener listener) {
+        if (listener == null) return;
+        activity.runOnUiThread(() -> {
+            if (!activity.isFinishing() && !activity.isDestroyed()) listener.onFinished();
+        });
+    }
+
+    private void checkForUpdates(boolean manual, StartupListener startupListener) {
+        if (!manual && startupListener == null) {
             long checkedAt = prefs.getLong("update_checked_at", 0L);
             long now = System.currentTimeMillis();
             if (now >= checkedAt && now - checkedAt < DAY_MS) return;
@@ -74,12 +102,14 @@ final class UpdateManager {
                 connection.setRequestMethod("GET");
                 connection.setRequestProperty("Accept", "application/vnd.github+json");
                 connection.setRequestProperty("User-Agent", "S04TV-Fire-Edition-Android");
-                connection.setConnectTimeout(9000);
-                connection.setReadTimeout(9000);
+                connection.setConnectTimeout(4500);
+                connection.setReadTimeout(4500);
                 int status = connection.getResponseCode();
                 if (status == 404) {
                     if (manual) notifyDialog("Keine Veröffentlichung",
                             "Auf GitHub ist noch kein Release verfügbar.");
+                    startupStatus(startupListener, "Keine Veröffentlichung gefunden");
+                    startupDone(startupListener);
                     return;
                 }
                 if (status != 200) throw new IllegalStateException("GitHub HTTP " + status);
@@ -112,6 +142,8 @@ final class UpdateManager {
                 if (compareVersions(tag.substring(1), installed) <= 0) {
                     if (manual) notifyDialog("S04TV ist aktuell",
                             "Installiert: v" + installed + "\nGitHub Release: " + tag);
+                    startupStatus(startupListener, "S04TV ist aktuell (v" + installed + ")");
+                    startupDone(startupListener);
                     return;
                 }
                 if (apk == null) throw new IllegalStateException("Kein APK im GitHub Release");
@@ -131,6 +163,7 @@ final class UpdateManager {
                         updateFile() != null && updateFile().isFile();
                 activity.runOnUiThread(() -> {
                     if (activity.isFinishing() || activity.isDestroyed()) return;
+                    if (startupListener != null) startupListener.onStatus("Update " + tag + " verfügbar");
                     new AlertDialog.Builder(activity)
                             .setTitle("Update " + tag + " verfügbar")
                             .setMessage("Installiert: v" + installed + "\nNeu: " + tag +
@@ -139,13 +172,22 @@ final class UpdateManager {
                             .setPositiveButton(cached ? "Installieren" : "Herunterladen & installieren", (dialog, which) -> {
                                 if (cached) verifyFileAndInstall();
                                 else downloadUpdate(url, sha256, tag);
+                                if (startupListener != null) startupListener.onFinished();
                             })
-                            .setNegativeButton("Später", null)
+                            .setNegativeButton("Später", (dialog, which) -> {
+                                if (startupListener != null) startupListener.onFinished();
+                            })
+                            .setOnCancelListener(dialog -> {
+                                if (startupListener != null) startupListener.onFinished();
+                            })
                             .show();
                 });
             } catch (Exception exception) {
                 if (manual) notifyDialog("Updateprüfung fehlgeschlagen",
                         "GitHub konnte nicht geprüft werden: " + exception.getMessage());
+                // Never block startup if GitHub is offline or the network times out.
+                startupStatus(startupListener, "Updateprüfung derzeit nicht möglich");
+                startupDone(startupListener);
             } finally {
                 if (connection != null) connection.disconnect();
             }

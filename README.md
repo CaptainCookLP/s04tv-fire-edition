@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.6.0 – native Fire-TV-Steuerung des originalen 3Q-Webplayers**
+**Version 0.6.1 – Autoplay, Back-Fix, dauerhafter Bildercache und Startbildschirm**
 
 Inoffizielle Fire-TV-/Android-TV-App für https://tv.schalke04.de/. Kein offizielles Produkt des FC Schalke 04. Anmeldung, Inhalte und Zugriffsrechte werden vollständig von S04TV und 3Q bereitgestellt. Keine Umgehung von DRM, Abonnements oder Ein-Gerät-Regeln.
 
@@ -67,3 +67,16 @@ Die untersuchte Webseite nutzt HLS mit .m3u8 und .m4s sowie AVC/AAC. Das Format 
 JDK 17, Android SDK 35, Gradle 8.10.2; lokaler Build: `gradle assembleDebug`. Das Repository enthält keinen Gradle Wrapper. Die Release-APK heißt `s04tv-fire-edition.apk`.
 
 Einstellungen: **Darstellungsgröße** passt nur die virtuelle CSS-Viewportbreite an, nicht HDMI oder Streamauflösung. **Anmeldesitzung löschen** entfernt Cookies/WebStorage, nicht die verschlüsselten Zugangsdaten.
+
+
+## v0.6.1 – Start, Cache, Updates und Videosteuerung
+
+- **Automatischer Videostart:** Nach dem Aufruf einer Video-Detailseite versucht die App, den regulären 3Q-Player über `window.player.play()` zu starten, sobald das HTML5-Medium bereit ist. Maximal drei verzögerte Versuche pro neuem Video; die App setzt ein vom Benutzer pausiertes Video nicht wieder fort. Fire-OS-/Autoplay-Vorgaben können den Start verhindern; Fehler sind in der Playerdiagnose erkennbar.
+- **Zurück in einem Schritt:** Fire-TV-Back verlässt die Videowiedergabe, beendet eine eventuell aktive native Fullscreen-Ansicht und öffnet die letzte Videoübersicht. Auch die Android-13-Back-Callback-Schnittstelle wird bedient.
+- **Startbildschirm:** Natives blau-dunkles S04TV+-Ladebild mit Status und Ladefortschritt. Die Website wird erst nach der Prüfung auf ein GitHub-Update geladen. Bei einem verfügbaren Update erscheint das Installations-/Downloadangebot über dem Ladebild, vor der Website.
+- **Updateprüfung bei jedem App-Start:** Der bislang mögliche 24-Stunden-Skip gilt nicht für den Startbildschirm. Netzwerkfehler blockieren die App nicht dauerhaft; nach einem Timeout wird die Website trotzdem geöffnet.
+- **Dauerhafter Cache:** Die HTTP-Cache- und DOM-Speicherdaten der WebView bleiben über normale App-Neustarts erhalten. Zusätzlich speichert die App geeignete **öffentliche, nicht signierte Bilddateien** von `tv.schalke04.de` in ihrem privaten App-Datenverzeichnis. Dieser Bildcache bleibt beim Neustart bestehen, ist 128 MB groß und entfernt veraltete Einträge nach maximal sieben Tagen. Die Einstellung **Gespeicherten Bildercache leeren** löscht ihn auf Wunsch.
+- **Sicherheit:** Keine dauerhafte Speicherung von geschützten Videostreams, HLS-/DASH-Manifesten, Lizenzantworten, persönlichen HTML-Seiten, Session-Cookies in Bilddateien oder URL-Tokens. Der normale HTTP-Cache berücksichtigt Server-Cache-Richtlinien; das Android-System kann dessen Inhalte bei Bedarf bereinigen.
+
+### Testschwerpunkte
+Nach dem APK-Update Startscreen mit GitHub-Updateprüfung, bereits gecachte Videokacheln nach Neustart, automatischen Start von VoD, Pause per OK und Rückkehr mit einer einzigen Zurück-Taste im Videovollbild testen. Geschützte Live-Videos separat prüfen.

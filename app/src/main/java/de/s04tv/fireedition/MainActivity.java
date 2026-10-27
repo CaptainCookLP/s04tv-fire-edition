@@ -1,6 +1,9 @@
 package de.s04tv.fireedition;
 
 import android.app.Activity;
+import android.os.Build;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -55,11 +58,22 @@ public final class MainActivity extends Activity {
     private boolean loginPromptShown;
     private String visitedUrl = HOME;
     private TvPlayerControls playerControls;
+    private PersistentAssetCache assetCache;
+    private StartupSplash startupSplash;
+    private final Handler startupHandler = new Handler(Looper.getMainLooper());
+    private Runnable startupTimeout;
+    private Bundle restoredWebState;
+    private boolean websiteStarted;
+    private boolean leavingVideo;
+    private String lastCatalogUrl = HOME;
+    private long lastVideoBackTime;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         updateManager = new UpdateManager(this, preferences);
+        assetCache = new PersistentAssetCache(this);
+        restoredWebState = savedInstanceState;
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
@@ -76,6 +90,10 @@ public final class MainActivity extends Activity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        // WebView revalidates HTTP responses normally. Its disk cache and
+        // DOM storage survive restarts; eligible public images also use filesDir.
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setSupportZoom(false);
         settings.setAllowFileAccess(false);
@@ -87,6 +105,12 @@ public final class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 cancelLoginCheck();
+                if (startupSplash != null) startupSplash.status("Lade S04TV+ …");
+            }
+            @Override public WebResourceResponse shouldInterceptRequest(
+                    WebView view, WebResourceRequest request) {
+                // This callback is off the UI thread. Only cache public, unsigned images.
+                return assetCache.intercept(request);
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest req) {
                 return !("https".equalsIgnoreCase(req.getUrl().getScheme()));
@@ -94,6 +118,7 @@ public final class MainActivity extends Activity {
             @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
                 super.doUpdateVisitedHistory(view, url, isReload);
                 visitedUrl = url;
+                if (isTvCatalog(url)) lastCatalogUrl = url;
                 if (isTvPage(url)) {
                     // The catalog may use SPA routing: attach both controllers on URL changes.
                     ThreeQPlayerController.install(view);
@@ -106,6 +131,7 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageFinished(WebView view, String url) {
                 visitedUrl = url;
+                if (isTvCatalog(url)) lastCatalogUrl = url;
                 if (!isTvVideo(url)) playerControls.hide();
                 applyViewport();
                 if (isLoginPage(url)) {
@@ -124,9 +150,15 @@ public final class MainActivity extends Activity {
                     }
                 }
                 CookieManager.getInstance().flush();
+                if (websiteStarted && startupSplash != null) {
+                    startupHandler.postDelayed(thisActivityReady(), 250);
+                }
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override public void onProgressChanged(WebView view, int progress) {
+                if (startupSplash != null && websiteStarted) startupSplash.progress(progress);
+            }
             @Override public void onShowCustomView(View view, CustomViewCallback callback) {
                 if (fullscreenView != null) {
                     callback.onCustomViewHidden();
@@ -142,13 +174,52 @@ public final class MainActivity extends Activity {
             }
             @Override public void onHideCustomView() { hideVideo(); }
         });
-        if (savedInstanceState != null) {
-            webView.restoreState(savedInstanceState);
-        } else {
-            webView.loadUrl(HOME);
+        // Keep all web content covered until the startup update decision is made.
+        webView.setVisibility(View.INVISIBLE);
+        startupSplash = new StartupSplash(this);
+        root.addView(startupSplash, new FrameLayout.LayoutParams(-1, -1));
+        startupSplash.bringToFront();
+        startupSplash.requestFocus();
+        startupTimeout = () -> startWebsite("Netzwerkprüfung abgeschlossen – lade S04TV+ …");
+        startupHandler.postDelayed(startupTimeout, 10500);
+        updateManager.checkAtStartup(new UpdateManager.StartupListener() {
+            @Override public void onStatus(String text) {
+                if (startupSplash != null) startupSplash.status(text);
+                // An available update dialog must be handled before showing the website.
+                if (text.startsWith("Update ") && text.contains(" verfügbar"))
+                    startupHandler.removeCallbacks(startupTimeout);
+            }
+            @Override public void onFinished() {
+                startWebsite("Lade S04TV+ …");
+            }
+        });
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
         }
-        webView.requestFocus();
-        updateManager.checkForUpdates(false);
+    }
+
+    private Runnable thisActivityReady() {
+        return () -> {
+            if (startupSplash == null || !websiteStarted || isFinishing()) return;
+            startupSplash.dismiss();
+            startupSplash = null;
+            if (webView != null && fullscreenView == null) webView.requestFocus();
+        };
+    }
+
+    private void startWebsite(String message) {
+        if (websiteStarted || isFinishing() || isDestroyed()) return;
+        websiteStarted = true;
+        if (startupTimeout != null) startupHandler.removeCallbacks(startupTimeout);
+        if (startupSplash != null) startupSplash.status(message);
+        webView.setVisibility(View.VISIBLE);
+        if (restoredWebState != null) {
+            if (webView.restoreState(restoredWebState) == null) webView.loadUrl(HOME);
+            restoredWebState = null;
+        } else webView.loadUrl(HOME);
+        // Loading and redirects must not leave a permanent blocking overlay.
+        startupHandler.postDelayed(thisActivityReady(), 20000);
     }
 
     private boolean isLoginPage(String url) {
@@ -258,7 +329,8 @@ public final class MainActivity extends Activity {
                         "Website neu laden",
                         "Anmeldesitzung löschen",
                         "Updates prüfen / installieren",
-                        "Player-Steuerung / Diagnose"
+                        "Player-Steuerung / Diagnose",
+                        "Gespeicherten Bildercache leeren"
                 }, (d, which) -> {
                     switch (which) {
                         case 0: chooseViewport(); break;
@@ -277,6 +349,13 @@ public final class MainActivity extends Activity {
                         case 4: clearSession(); break;
                         case 5: updateManager.checkForUpdates(true); break;
                         case 6: showPlayerControls(); break;
+                        case 7:
+                            new Thread(() -> {
+                                assetCache.clear();
+                                runOnUiThread(() -> Toast.makeText(this,
+                                        "Bildercache geleert", Toast.LENGTH_SHORT).show());
+                            }, "s04tv-image-cache-clear").start();
+                            break;
                         default: break;
                     }
                 })
@@ -529,50 +608,54 @@ public final class MainActivity extends Activity {
         webView.setVisibility(View.VISIBLE);
         if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
         fullscreenCallback = null;
-        if (isTvVideo(visitedUrl)) VideoTvMode.present(webView);
+        if (isTvVideo(visitedUrl) && !leavingVideo) VideoTvMode.present(webView);
         webView.requestFocus();
     }
 
     private void handleBack() {
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastVideoBackTime < 450) return; // avoid duplicate API33 + key callbacks
+        if (isTvVideo(visitedUrl) || fullscreenView != null) {
+            lastVideoBackTime = now;
+            leavingVideo = true;
+            if (playerControls != null) playerControls.hide();
+            // Exit video in ONE Back action, even from Android WebChrome fullscreen.
+            // Retain the catalog URL for HTML5 history / SPA navigations.
+            if (fullscreenView != null) hideVideo();
+            ThreeQPlayerController.command(webView, "pause", null);
+            ThreeQPlayerController.command(webView, "exitfullscreen", null);
+            VideoTvMode.exit(webView);
+            android.webkit.WebBackForwardList history = webView.copyBackForwardList();
+            int index = history.getCurrentIndex();
+            boolean navigated = false;
+            for (int previous = index - 1; previous >= 0; previous--) {
+                android.webkit.WebHistoryItem item = history.getItemAtIndex(previous);
+                if (item != null && isTvCatalog(item.getUrl())) {
+                    webView.goBackOrForward(previous - index);
+                    navigated = true;
+                    break;
+                }
+            }
+            if (!navigated) webView.loadUrl(isTvCatalog(lastCatalogUrl) ? lastCatalogUrl : HOME);
+            visitedUrl = isTvCatalog(lastCatalogUrl) ? lastCatalogUrl : HOME;
+            webView.requestFocus();
+            leavingVideo = false;
+            return;
+        }
         if (playerControls != null && playerControls.isShowing()) {
             playerControls.hide();
-            if (webView != null) webView.requestFocus();
+            webView.requestFocus();
             return;
         }
-        if (fullscreenView != null) {
-            hideVideo();
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
             return;
         }
-        if (webView != null) {
-            if (isTvVideo(visitedUrl)) {
-                // Release fullscreen and playback when leaving a video.
-                ThreeQPlayerController.command(webView, "pause", null);
-                ThreeQPlayerController.command(webView, "exitfullscreen", null);
-                VideoTvMode.exit(webView);
-                // The webview history can contain redirects/player frames;
-                // return directly to the nearest S04TV catalog, if available.
-                android.webkit.WebBackForwardList history = webView.copyBackForwardList();
-                int index = history.getCurrentIndex();
-                for (int previous = index - 1; previous >= 0; previous--) {
-                    android.webkit.WebHistoryItem item = history.getItemAtIndex(previous);
-                    if (item != null && isTvCatalog(item.getUrl())) {
-                        webView.goBackOrForward(previous - index);
-                        return;
-                    }
-                }
-                webView.loadUrl(HOME);
-                return;
-            }
-            if (webView.canGoBack()) {
-                webView.goBack();
-                return;
-            }
-        }
-        long now = SystemClock.elapsedRealtime();
         if (now - lastBackPress <= 2000) finish();
         else {
             lastBackPress = now;
-            Toast.makeText(this, "Erneut Zurück drücken zum Beenden", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Erneut Zurück drücken zum Beenden",
+                    Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -606,6 +689,11 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onDestroy() {
         cancelLoginCheck();
+        startupHandler.removeCallbacksAndMessages(null);
+        if (startupSplash != null) {
+            startupSplash.dismiss();
+            startupSplash = null;
+        }
         LoginAutoFill.stop(webView);
         if (updateManager != null) updateManager.destroy();
         if (playerControls != null) playerControls.hide();
