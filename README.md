@@ -1,6 +1,6 @@
 # S04TV Fire Edition
 
-**Version 0.7.1 – Fernbedienungs-Debugging und Tastenanzeige**
+**Version 0.7.2 – Stabilere Fernbedienungs-Debuganzeige**
 
 Inoffizielle Fire-TV-/Android-TV-App für https://tv.schalke04.de/. Kein offizielles Produkt des FC Schalke 04. Anmeldung, Inhalte und Zugriffsrechte werden vollständig von S04TV und 3Q bereitgestellt. Keine Umgehung von DRM, Abonnements oder Ein-Gerät-Regeln.
 
@@ -114,3 +114,12 @@ adb logcat -v time -s S04TVRemote:I
 ```
 
 Debug-Modus zuerst einschalten. Während `logcat` läuft, den Fehler reproduzieren, anschließend die Ausgabe zusammen mit dem Video teilen. Das Protokoll enthält ausschließlich die vorgenannten freigegebenen Ereignisse. Wenn `logcat` auf dem Fire TV nicht verfügbar ist, lässt sich alternativ das Protokoll aus dem Debug-Menü kopieren.
+
+
+## v0.7.2 – Sichtbarkeit der Fernbedienungsanzeige
+
+Die erste Debug-Anzeige lag im normalen `FrameLayout` der WebView. Auf Fire-TV-/Android-Videooberflächen kann sie dadurch von WebView-/Vollbildflächen verdeckt werden. Die Anzeige nutzt jetzt **ein an das App-Fenster gebundenes, nicht fokussierbares und nicht berührbares `TYPE_APPLICATION_PANEL`** und benötigt **keine** systemweite Overlayberechtigung. Falls Fire OS das Panel ablehnt, nutzt sie ein höhergelegtes Overlay im App-Layout. Sie versucht das Einblenden beim Aktivieren, im Activity-Resume und nach Fokuswechsel erneut. Beim Abschalten und Beenden wird das Fenster wieder entfernt.
+
+**Sichtbarkeit prüfen:** Menü → Fernbedienung-Debugging → Debug-Anzeige einschalten; danach erneut Menü → Fernbedienung-Debugging → **Debug-Anzeige testen**. Schließe den Testdialog, drücke Links/Rechts/OK und prüfe, ob das Live-Feld oben links erscheint. Die Funktion **Letzte Ereignisse anzeigen** nennt zusätzlich `HUD: Application-Panel`, `Fallback` oder einen Fehler. **Protokoll kopieren** enthält außerdem den HUD-Zustand, die Sichtbarkeit und Fensterabmessungen.
+
+Die Diagnose erfasst weiterhin nur sichere Fernbedienungs- und App-Ereignisse. Sie ersetzt keinen Test auf einem echten Fire TV. Home/Power können vom System abgefangen werden.

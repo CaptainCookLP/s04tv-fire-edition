@@ -7,12 +7,14 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -23,12 +25,15 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * Opt-in TV remote debugger for video recordings and ADB logcat.
+ * Optional on-screen Fire TV remote debugger.
  *
- * Never inspects input text, WebView content, URLs, passwords, cookies,
- * network traffic, or player tokens. Logs only a small allowlist of remote
- * key codes and native application state. Android's system-owned Home key
- * and some hardware keys may not reach Activity.dispatchKeyEvent().
+ * A token-bound TYPE_APPLICATION_PANEL keeps the HUD above WebView/video
+ * content without requiring SYSTEM_ALERT_WINDOW. The HUD deliberately never
+ * takes focus or touch events. If the device rejects the child window, we
+ * fall back to a high-elevation Activity content overlay.
+ *
+ * Only allowlisted remote keys and native action names are recorded.
+ * No account details, user-entered text, URL, tokens, cookies or streams.
  */
 final class RemoteDebugOverlay {
     private static final String PREF_ENABLED = "remote_debug_enabled";
@@ -37,61 +42,158 @@ final class RemoteDebugOverlay {
     private static final int HUD_RECORDS = 5;
 
     private final Activity activity;
+    private final FrameLayout root;
+    private final WindowManager windowManager;
     private final SharedPreferences preferences;
     private final TextView hud;
     private final ArrayDeque<String> records = new ArrayDeque<>();
-    private final SimpleDateFormat timestamp = new SimpleDateFormat("HH:mm:ss.SSS", Locale.GERMANY);
+    private final SimpleDateFormat timestamp =
+            new SimpleDateFormat("HH:mm:ss.SSS", Locale.GERMANY);
     private boolean enabled;
+    private boolean windowAttached;
+    private boolean fallbackAttached;
+    private String lastWindowError = "none";
 
     RemoteDebugOverlay(Activity activity, FrameLayout root, SharedPreferences preferences) {
         this.activity = activity;
+        this.root = root;
         this.preferences = preferences;
+        this.windowManager = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
         this.enabled = preferences.getBoolean(PREF_ENABLED, false);
 
         hud = new TextView(activity);
         hud.setTextColor(Color.WHITE);
-        hud.setTextSize(15);
-        hud.setPadding(dp(14), dp(10), dp(14), dp(10));
+        hud.setTextSize(17);
+        hud.setPadding(dp(16), dp(12), dp(16), dp(12));
         hud.setMaxWidth(dp(850));
         hud.setFocusable(false);
+        hud.setFocusableInTouchMode(false);
         hud.setClickable(false);
         hud.setLongClickable(false);
         hud.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        // If a device rejects the dedicated window, still render above siblings.
+        hud.setElevation(dp(80));
+        hud.setTranslationZ(dp(12));
 
         GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.argb(224, 2, 16, 31));
-        background.setCornerRadius(dp(8));
-        background.setStroke(dp(1), Color.rgb(0, 177, 235));
+        background.setColor(Color.argb(240, 2, 17, 40));
+        background.setCornerRadius(dp(10));
+        background.setStroke(dp(3), Color.rgb(0, 188, 255));
         hud.setBackground(background);
 
-        FrameLayout.LayoutParams position = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.START);
-        position.setMargins(dp(16), dp(12), dp(16), 0);
-        root.addView(hud, position);
         if (enabled) recordState("Debug-Modus gestartet");
-        else refresh();
     }
 
     boolean isEnabled() { return enabled; }
 
     void setEnabled(boolean value) {
-        if (enabled == value) return;
+        if (enabled == value) {
+            if (value) bringToFront();
+            return;
+        }
         enabled = value;
         preferences.edit().putBoolean(PREF_ENABLED, value).apply();
         if (value) {
             records.clear();
-            recordState("Debug-Modus eingeschaltet");
+            recordState("DEBUG EIN – Sichtbarkeitstest bereit");
         } else {
-            refresh();
+            detach();
         }
     }
 
-    void bringToFront() {
-        if (enabled) hud.bringToFront();
+    /** Called after the Activity's decor window has a valid token. */
+    void onResume() {
+        if (enabled) {
+            activity.getWindow().getDecorView().post(this::bringToFront);
+        }
     }
 
-    /** Observes keys in Android modal dialogs without swallowing them. */
+    void onDestroy() {
+        enabled = false;
+        detach();
+    }
+
+    void bringToFront() {
+        if (!enabled) return;
+        ensureAttached();
+        if (fallbackAttached) hud.bringToFront();
+    }
+
+    /**
+     * WindowManager owns the HUD instead of root's child drawing order.
+     * This preserves visibility during WebChromeClient fullscreen and when
+     * the browser/video inserts views later.
+     */
+    private void ensureAttached() {
+        if (windowAttached || fallbackAttached || !enabled) return;
+
+        View decor = activity.getWindow().getDecorView();
+        android.os.IBinder token = decor.getWindowToken();
+        if (token == null) {
+            lastWindowError = "window-token-not-ready";
+            // onResume() will retry after the Activity becomes visible.
+            return;
+        }
+
+        if (windowManager != null) {
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT);
+            lp.token = token;
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.x = dp(22);
+            lp.y = dp(36);
+            lp.setTitle("S04TV Fernbedienung Debug");
+            try {
+                windowManager.addView(hud, lp);
+                windowAttached = true;
+                lastWindowError = "none";
+                Log.i(LOG_TAG, "HUD attached as application panel");
+                return;
+            } catch (RuntimeException e) {
+                // Never prevent the app from starting just because a Fire OS
+                // variant rejects an additional app-owned panel.
+                lastWindowError = e.getClass().getSimpleName();
+                Log.w(LOG_TAG, "HUD panel rejected; falling back to Activity view", e);
+            }
+        } else {
+            lastWindowError = "window-manager-null";
+        }
+
+        try {
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP | Gravity.START);
+            params.setMargins(dp(22), dp(36), dp(12), 0);
+            root.addView(hud, params);
+            fallbackAttached = true;
+            hud.bringToFront();
+        } catch (RuntimeException e) {
+            lastWindowError += "/fallback-" + e.getClass().getSimpleName();
+            Log.e(LOG_TAG, "HUD fallback failed", e);
+        }
+    }
+
+    private void detach() {
+        if (windowAttached) {
+            try { windowManager.removeViewImmediate(hud); }
+            catch (RuntimeException e) {
+                Log.w(LOG_TAG, "HUD removal failed", e);
+            }
+            windowAttached = false;
+        }
+        if (fallbackAttached) {
+            root.removeView(hud);
+            fallbackAttached = false;
+        }
+    }
+
     void observeDialog(AlertDialog dialog, String context) {
         if (dialog == null) return;
         dialog.setOnKeyListener((d, keyCode, event) -> {
@@ -102,9 +204,8 @@ final class RemoteDebugOverlay {
 
     void recordKey(KeyEvent event, String route, boolean handledByActivity) {
         if (!enabled || event == null || !isRemoteKey(event.getKeyCode())) return;
-        if (event.getAction() != KeyEvent.ACTION_DOWN && event.getAction() != KeyEvent.ACTION_UP)
-            return;
-        // Keep a held-down button visible, without filling the log with repeats.
+        if (event.getAction() != KeyEvent.ACTION_DOWN &&
+                event.getAction() != KeyEvent.ACTION_UP) return;
         int repeat = event.getRepeatCount();
         if (repeat > 1 && repeat % 5 != 0) return;
 
@@ -119,6 +220,25 @@ final class RemoteDebugOverlay {
         if (enabled) add("APP | " + state);
     }
 
+    void test() {
+        if (!enabled) {
+            setEnabled(true);
+        }
+        recordState("SICHTBARKEITSTEST: HUD SOLLTE OBEN LINKS STEHEN");
+        bringToFront();
+        String status = windowAttached ? "Eigenes HUD-Fenster aktiv" :
+                fallbackAttached ? "Fallback im App-Fenster aktiv" :
+                "HUD konnte nicht eingeblendet werden: " + lastWindowError;
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("Debug-Anzeige testen")
+                .setMessage(status + "\n\nSchließe dieses Fenster und drücke Links, Rechts und OK. " +
+                        "Die Tasten müssen anschließend im HUD oben links und im Protokoll erscheinen.\n\n" +
+                        "Ist das HUD unsichtbar, sende mir bitte den Status und das Protokoll.")
+                .setPositiveButton("OK", null)
+                .show();
+        observeDialog(dialog, "HUD-Test");
+    }
+
     private void add(String message) {
         String entry = timestamp.format(new Date()) + "  " + message;
         records.addLast(entry);
@@ -128,24 +248,32 @@ final class RemoteDebugOverlay {
     }
 
     private void refresh() {
-        hud.setVisibility(enabled ? View.VISIBLE : View.GONE);
         if (!enabled) return;
-        StringBuilder b = new StringBuilder("S04TV REMOTE DEBUG  [AN]  •  Menü → Debugging\n");
+        StringBuilder b = new StringBuilder(
+                "S04TV  •  FERNBEDIENUNG LIVE  •  DEBUG AN\n");
         int skip = Math.max(0, records.size() - HUD_RECORDS);
         int i = 0;
         for (String record : records) {
             if (i++ >= skip) b.append(record).append('\n');
         }
         hud.setText(b.toString().trim());
-        hud.bringToFront();
+        ensureAttached();
+        if (fallbackAttached) hud.bringToFront();
     }
 
     String report() {
         StringBuilder b = new StringBuilder();
-        b.append("S04TV Fire Edition – Fernbedienungsdiagnose\n");
-        b.append("Nur Tastencodes und App-Zustand. Keine Inhalte, URLs oder Zugangsdaten.\n");
+        b.append("S04TV Fire Edition – Fernbedienungsdiagnose v0.7.2\n");
+        b.append("Nur Tastencodes und App-Zustand, keine Inhalte oder Zugangsdaten.\n");
         b.append("Android API: ").append(android.os.Build.VERSION.SDK_INT).append('\n');
-        b.append("Home/System-Tasten können von Fire OS abgefangen werden.\n\n");
+        b.append("Debug: ").append(enabled ? "AN" : "AUS").append('\n');
+        b.append("HUD: ").append(windowAttached ? "Application-Panel" :
+                fallbackAttached ? "Activity-Fallback" : "nicht angehaengt").append('\n');
+        b.append("HUD sichtbar: ").append(hud.isShown()).append('\n');
+        b.append("HUD Groesse: ").append(hud.getWidth()).append("x")
+                .append(hud.getHeight()).append('\n');
+        b.append("HUD-Fehler: ").append(lastWindowError).append('\n');
+        b.append("Home/System-Tasten koennen von Fire OS abgefangen werden.\n\n");
         if (records.isEmpty()) b.append("(Noch keine Ereignisse)\n");
         else for (String line : records) b.append(line).append('\n');
         return b.toString();
@@ -161,7 +289,10 @@ final class RemoteDebugOverlay {
         if (preview.length() == 0) preview.append("Noch keine Ereignisse.");
         AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("Fernbedienungsdiagnose (" + records.size() + " Ereignisse)")
-                .setMessage(preview.toString())
+                .setMessage("HUD: " + (windowAttached ? "Application-Panel" :
+                        fallbackAttached ? "Fallback" : lastWindowError) +
+                        "\nSichtbar: " + hud.isShown() +
+                        "\n\n" + preview)
                 .setPositiveButton("Protokoll kopieren", (d, which) -> copyReport())
                 .setNeutralButton("Leeren", (d, which) -> clear())
                 .setNegativeButton("Schließen", null)

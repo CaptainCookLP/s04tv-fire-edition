@@ -451,6 +451,7 @@ public final class MainActivity extends Activity {
                 .setItems(new String[]{
                         remoteDebug.isEnabled() ? "Debug-Anzeige ausschalten" : "Debug-Anzeige einschalten",
                         "Letzte Ereignisse anzeigen",
+                        "Debug-Anzeige testen",
                         "Protokoll in Zwischenablage kopieren",
                         "Protokoll leeren"
                 }, (d, which) -> {
@@ -462,8 +463,9 @@ public final class MainActivity extends Activity {
                                     Toast.LENGTH_SHORT).show();
                             break;
                         case 1: remoteDebug.showReport(); break;
-                        case 2: remoteDebug.copyReport(); break;
-                        case 3: remoteDebug.clear(); break;
+                        case 2: remoteDebug.test(); break;
+                        case 3: remoteDebug.copyReport(); break;
+                        case 4: remoteDebug.clear(); break;
                         default: break;
                     }
                 })
@@ -845,9 +847,15 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume() {
         super.onResume();
+        if (remoteDebug != null) remoteDebug.onResume();
         if (webView != null) webView.onResume();
         if (updateManager != null) updateManager.onResume();
     }
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && remoteDebug != null) remoteDebug.bringToFront();
+    }
+
     @Override protected void onDestroy() {
         cancelLoginCheck();
         startupHandler.removeCallbacksAndMessages(null);
@@ -859,6 +867,7 @@ public final class MainActivity extends Activity {
         if (updateManager != null) updateManager.destroy();
         if (playerControls != null) playerControls.hide();
         hideVideo();
+        if (remoteDebug != null) remoteDebug.onDestroy();
         if (webView != null) {
             root.removeView(webView);
             webView.destroy();
